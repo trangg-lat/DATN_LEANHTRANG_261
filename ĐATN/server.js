@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 app.post("/login", (req, res) => {
     const { username, password } = req.body;
     const sql = "SELECT id, ten_dang_nhap, ho_ten, vai_tro FROM nguoi_dung WHERE ten_dang_nhap = ? AND mat_khau = ?";
-    
+
     db.query(sql, [username, password], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         if (result.length > 0) {
@@ -69,7 +69,7 @@ app.post("/san-pham", (req, res) => {
     const { ten_san_pham, danh_muc, gia } = req.body;
     const gia_decimal = parseFloat(gia) || 0;
     const sql = `INSERT INTO san_pham (ten_san_pham, danh_muc, gia) VALUES (?, ?, ?)`;
-    
+
     db.query(sql, [ten_san_pham, danh_muc, gia_decimal], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -186,7 +186,23 @@ app.post("/nha-cung-cap", (req, res) => {
 });
 
 // ==========================================
-// 6. 📊 API THỐNG KÊ (DÀNH CHO DASHBOARD)
+// 6. 📜 API LỊCH SỬ GIAO DỊCH (CHO AI)
+// ==========================================
+app.get("/lich-su-giao-dich", (req, res) => {
+    const sql = `
+        SELECT gd.*, sp.ten_san_pham
+        FROM giao_dich gd
+        JOIN san_pham sp ON gd.san_pham_id = sp.id
+        ORDER BY gd.thoi_gian DESC
+        LIMIT 500`;
+    db.query(sql, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(result);
+    });
+});
+
+// ==========================================
+// 7. 📊 API THỐNG KÊ (DÀNH CHO DASHBOARD)
 // ==========================================
 app.get("/dashboard-stats", (req, res) => {
     const sql = `
