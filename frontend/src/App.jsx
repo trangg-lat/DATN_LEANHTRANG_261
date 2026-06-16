@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { toast, Toaster } from "react-hot-toast";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from "react-router-dom";
 import {
   LayoutDashboard, Box, Warehouse, ArrowDownCircle,
@@ -7,15 +8,33 @@ import {
   ShoppingCart, AlertTriangle, FileSpreadsheet, FileText,
   Search, ArrowLeft, CheckCircle2, Plus, PlusCircle, Save,
   TrendingUp, Loader2, Sparkles, PackageCheck, PackageMinus, PackageX,
-  ArrowRightCircle, MapPin, ClipboardList, Settings2
+  ArrowRightCircle, MapPin, ClipboardList, Settings2, Moon, Sun
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
-  BarChart, Bar, PieChart, Pie, Cell
+  BarChart, Bar, PieChart, Pie, Cell, ReferenceLine, ComposedChart
 } from 'recharts';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import html2pdf from 'html2pdf.js';
 import "./App.css";
+
+
+const confirmToast = (message) => new Promise((resolve) => {
+  const isDark = localStorage.getItem('theme') === 'dark';
+  const secondaryBtnStyle = {
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+    color: isDark ? '#FAFAFA' : '#0F172A',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
+  };
+  toast((t) => (
+    <div style={{ textAlign: 'center' }}>
+      <p style={{ fontWeight: 'bold', marginBottom: '10px' }}>⚠️ {message}</p>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+        <button className="confirm-btn" style={{ padding: '6px 16px', fontSize: '13px', background: '#ef4444' }} onClick={() => { toast.dismiss(t.id); resolve(true); }}>Xóa</button>
+        <button className="secondary-btn" style={{ padding: '6px 16px', fontSize: '13px', ...secondaryBtnStyle }} onClick={() => { toast.dismiss(t.id); resolve(false); }}>Hủy</button>
+      </div>
+    </div>
+  ), { duration: Infinity, style: { border: '1px solid #fecaca', padding: '16px', color: '#b91c1c' } });
+});
 
 const API = "http://localhost:3000"; // URL Backend Node.js
 // const API = "https://eleven-clowns-wink.loca.lt"; // Public URL via localtunnel
@@ -81,40 +100,83 @@ function calculateAbcXyzSummary(products, stock, history) {
   const aCount = Math.max(1, Math.ceil(totalCount * 0.2));
   const bCount = Math.max(1, Math.ceil(totalCount * 0.3));
 
-  let abc = { A: 0, B: 0, C: 0 };
-  let xyz = { X: 0, Y: 0, Z: 0 };
+  let abc = { Cao: 0, TrungBinh: 0, Thap: 0 };
+  let xyz = { OnDinh: 0, BienDong: 0, KhoDuBao: 0 };
+  const details = {};
 
   sorted.forEach((item, idx) => {
-    if (idx < aCount) abc.A += 1;
-    else if (idx < aCount + bCount) abc.B += 1;
-    else abc.C += 1;
+    let abcClass = "Thấp";
+    if (idx < aCount) {
+      abc.Cao += 1;
+      abcClass = "Cao";
+    } else if (idx < aCount + bCount) {
+      abc.TrungBinh += 1;
+      abcClass = "Trung bình";
+    } else {
+      abc.Thap += 1;
+    }
 
-    if (item.transactionCount >= 6) xyz.X += 1;
-    else if (item.transactionCount >= 3) xyz.Y += 1;
-    else xyz.Z += 1;
+    let xyzClass = "Khó dự báo";
+    if (item.transactionCount >= 6) {
+      xyz.OnDinh += 1;
+      xyzClass = "Ổn định";
+    } else if (item.transactionCount >= 3) {
+      xyz.BienDong += 1;
+      xyzClass = "Biến động";
+    } else {
+      xyz.KhoDuBao += 1;
+    }
+
+    details[item.id] = { abcClass, xyzClass };
   });
 
-  return { ...abc, ...xyz };
+  return { 
+    summary: { ...abc, ...xyz }, 
+    details 
+  };
 }
 
 // --- THÀNH PHẦN TOP HEADER CHUNG ---
-function TopHeader({ user, onProfileClick }) {
+function TopHeader({ user, onProfileClick, theme, toggleTheme }) {
   return (
     <header className="top-header">
       <div className="header-left">
-        <Warehouse size={24} color="white" />
-        <span className="header-brand">WAREHOUSE MANAGER</span>
-        <span className="header-nav-item">Kho lưu trữ nội bộ</span>
+        <Warehouse size={24} className="header-icon" />
+        <span className="header-brand">QUẢN LÝ KHO THÔNG MINH </span>
+        <span className="header-nav-item" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>Kho lưu trữ nội bộ</span>
       </div>
       <div className="header-right">
-        <div className="icon-badge-wrapper"><Box size={20} /></div>
-        <div className="icon-badge-wrapper"><ClipboardCheck size={20} /></div>
-        <div className="icon-badge-wrapper">
+        <div className="icon-badge-wrapper" onClick={toggleTheme} title="Chuyển đổi giao diện Sáng/Tối">
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </div>
+        <Link 
+          to={user && (user.vai_tro === 'admin' || user.vai_tro === 'quan_ly') ? "/san-pham" : "/ton-kho"} 
+          className="icon-badge-wrapper" 
+          title={user && (user.vai_tro === 'admin' || user.vai_tro === 'quan_ly') ? "Danh sách sản phẩm" : "Xem tồn kho"}
+        >
+          <Box size={20} />
+        </Link>
+        <Link to="/kiem-ke" className="icon-badge-wrapper" title="Kiểm kê kho">
+          <ClipboardCheck size={20} />
+        </Link>
+        <Link 
+          to="/#ai-predictions" 
+          className="icon-badge-wrapper" 
+          title="Dự báo nhu cầu AI" 
+          onClick={() => {
+            if (window.location.pathname === '/') {
+              const element = document.getElementById('ai-predictions');
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+              }
+            }
+          }}
+        >
           <span className="notification-dot"></span>
           <BrainCircuit size={20} />
-        </div>
+        </Link>
         {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'rgba(255,255,255,0.1)', padding: '5px 12px', borderRadius: '20px' }} onClick={onProfileClick}>
+          <div className="user-profile-btn" onClick={onProfileClick}>
             <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{user.ho_ten}</span>
             <UserCircle size={28} />
           </div>
@@ -131,12 +193,19 @@ function ProfileModal({ user, onClose, apiFetch }) {
   const [matKhauCu, setMatKhauCu] = useState("");
   const [matKhauMoi, setMatKhauMoi] = useState("");
 
+  const isDark = localStorage.getItem('theme') === 'dark';
+  const secondaryBtnStyle = {
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+    color: isDark ? '#FAFAFA' : '#0F172A',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const payload = { ho_ten: hoTen };
       if (matKhauMoi) {
-        if (!matKhauCu) return alert("Vui lòng nhập mật khẩu cũ!");
+        if (!matKhauCu) return toast.error("Vui lòng nhập mật khẩu cũ!")
         payload.mat_khau_cu = matKhauCu;
         payload.mat_khau_moi = matKhauMoi;
       }
@@ -144,7 +213,7 @@ function ProfileModal({ user, onClose, apiFetch }) {
         method: "PUT",
         body: JSON.stringify(payload)
       });
-      alert("Cập nhật thông tin thành công!");
+      toast.success("Cập nhật thông tin thành công!")
 
       // Update local storage user name
       const storedUser = JSON.parse(localStorage.getItem('user'));
@@ -152,7 +221,7 @@ function ProfileModal({ user, onClose, apiFetch }) {
       localStorage.setItem('user', JSON.stringify(storedUser));
       window.location.reload();
     } catch (err) {
-      alert("Lỗi: " + err.message);
+      toast.error("Lỗi: " + err.message)
     }
   };
 
@@ -175,7 +244,7 @@ function ProfileModal({ user, onClose, apiFetch }) {
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button type="submit" className="confirm-btn">Lưu thay đổi</button>
-            <button type="button" className="secondary-btn" onClick={onClose}>Hủy</button>
+            <button type="button" className="secondary-btn" style={secondaryBtnStyle} onClick={onClose}>Hủy</button>
           </div>
         </form>
       </div>
@@ -190,6 +259,25 @@ export default function App() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
+
+  // Theme state
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem("theme");
+    return savedTheme ? savedTheme : "dark"; // Default to dark mode as requested
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   const apiFetch = async (url, options = {}) => {
     const headers = {
@@ -229,10 +317,10 @@ export default function App() {
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("token", data.token);
       } else {
-        alert(data.message);
+        toast(data.message)
       }
     } catch (error) {
-      alert("Lỗi kết nối server!");
+      toast.error("Lỗi kết nối server!")
     }
   };
 
@@ -247,8 +335,8 @@ export default function App() {
 
   return (
     <Router>
+      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
       <div className="font-sans antialiased">
-        <TopHeader user={user} onProfileClick={() => setShowProfile(true)} />
         {showProfile && user && <ProfileModal user={user} onClose={() => setShowProfile(false)} apiFetch={apiFetch} />}
         {!user ? (
           <div className="login-page-container">
@@ -297,10 +385,12 @@ export default function App() {
               </nav>
             </aside>
 
+            <div className="main-wrapper">
+              <TopHeader user={user} onProfileClick={() => setShowProfile(true)} theme={theme} toggleTheme={toggleTheme} />
             {/* --- NỘI DUNG CHÍNH --- */}
             <main className="content">
               <Routes>
-                <Route path="/" element={<Dashboard user={user} apiFetch={apiFetch} />} />
+                <Route path="/" element={<Dashboard user={user} apiFetch={apiFetch} theme={theme} />} />
 
                 <Route path="/san-pham" element={<SanPhamManager user={user} apiFetch={apiFetch} />} />
                 <Route path="/ton-kho" element={<TonKhoManager user={user} apiFetch={apiFetch} />} />
@@ -316,6 +406,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </main>
+            </div>
           </div>
         )}
       </div>
@@ -331,22 +422,24 @@ function LoginPage({ onLogin }) {
     <div className="login-wrapper">
       <div className="login-box">
         <div className="login-header">
-          <Warehouse size={56} color="#1d4ed8" />
+          <div className="login-icon-container">
+            <Warehouse size={40} color="#c084fc" />
+          </div>
           <div className="login-header-text">
-            <h1>WAREHOUSE</h1>
-            <p>MANAGER</p>
+            <h1>HỆ THỐNG</h1>
+            <p>QUẢN LÝ KHO</p>
           </div>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); onLogin(username, password); }} className="login-form">
           <div className="input-group">
-            <UserCircle size={20} color="#94a3b8" />
-            <input type="text" placeholder="Email" value={username} onChange={e => setUsername(e.target.value)} required />
+            <UserCircle className="icon" />
+            <input type="text" placeholder="Tài khoản / Email" value={username} onChange={e => setUsername(e.target.value)} required />
           </div>
           <div className="input-group">
-            <span style={{ color: '#94a3b8', fontSize: '16px' }}>🔒</span>
+            <span className="icon" style={{fontSize: '16px'}}>🔒</span>
             <input type="password" placeholder="Mật khẩu" value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
-          <button type="submit" className="btn-primary login-btn">Đăng Nhập</button>
+          <button type="submit" className="login-btn">Đăng Nhập</button>
           <a href="#" className="forgot-password">Quên mật khẩu?</a>
         </form>
       </div>
@@ -366,7 +459,7 @@ function SanPhamManager({ user, apiFetch }) {
       setList(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Lỗi tải sản phẩm:", error);
-      alert(error.message);
+      toast(error.message)
     }
   };
 
@@ -384,18 +477,18 @@ function SanPhamManager({ user, apiFetch }) {
       });
       setIsEditing(id);
     } catch (error) {
-      alert(error.message);
+      toast(error.message)
     }
   };
 
   const handleDeleteProduct = async (id) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa sản phẩm này?")) return;
+    if (!await confirmToast("Bạn có chắc chắn muốn xóa sản phẩm này?")) return;
 
     try {
       await apiFetch(`${API}/san-pham/${id}`, { method: "DELETE" });
       fetchAll();
     } catch (error) {
-      alert("Lỗi: " + error.message);
+      toast.error("Lỗi: " + error.message)
     }
   };
 
@@ -412,7 +505,7 @@ function SanPhamManager({ user, apiFetch }) {
       setIsEditing(null);
       fetchAll();
     } catch (error) {
-      alert("Không thể lưu sản phẩm: " + error.message);
+      toast.error("Không thể lưu sản phẩm: " + error.message)
     }
   };
 
@@ -477,7 +570,7 @@ function SanPhamManager({ user, apiFetch }) {
                 <th>Danh mục</th>
                 <th>Đơn vị</th>
                 <th>Giá</th>
-                <th>Phân loại ABC</th>
+                <th>Tầm quan trọng</th>
                 {user.vai_tro === "admin" && <th>Thao tác</th>}
               </tr>
             </thead>
@@ -490,11 +583,11 @@ function SanPhamManager({ user, apiFetch }) {
                   <td className="text-muted font-bold text-blue-600">{Number(item.gia).toLocaleString()}đ</td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
-                      background: item.phan_loai_abc === 'A' ? 'rgba(34,197,94,0.2)' : item.phan_loai_abc === 'B' ? 'rgba(250,204,21,0.2)' : 'rgba(148,163,184,0.2)',
-                      color: item.phan_loai_abc === 'A' ? '#4ade80' : item.phan_loai_abc === 'B' ? '#facc15' : '#94a3b8',
+                      background: (item.phan_loai_abc || '').includes('Cao') || item.phan_loai_abc === 'A' ? 'rgba(34,197,94,0.2)' : (item.phan_loai_abc || '').includes('Trung bình') || item.phan_loai_abc === 'B' ? 'rgba(250,204,21,0.2)' : 'rgba(148,163,184,0.2)',
+                      color: (item.phan_loai_abc || '').includes('Cao') || item.phan_loai_abc === 'A' ? '#4ade80' : (item.phan_loai_abc || '').includes('Trung bình') || item.phan_loai_abc === 'B' ? '#facc15' : '#94a3b8',
                       padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold'
                     }}>
-                      {item.phan_loai_abc || 'C'}
+                      {item.phan_loai_abc || 'Thấp'}
                     </span>
                   </td>
                   {user.vai_tro === "admin" && (
@@ -534,7 +627,7 @@ function TonKhoManager({ user, apiFetch }) {
       setList(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      alert(error.message);
+      toast(error.message)
     }
   };
   const fetchProducts = async () => {
@@ -543,7 +636,7 @@ function TonKhoManager({ user, apiFetch }) {
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      alert(error.message);
+      toast(error.message)
     }
   };
 
@@ -560,7 +653,7 @@ function TonKhoManager({ user, apiFetch }) {
       setStockForm({ ...stockForm, so_luong: "" });
       fetchStock();
     } catch (error) {
-      alert(error.message);
+      toast(error.message)
     }
   };
 
@@ -649,7 +742,7 @@ function NhapKhoManager({ user, apiFetch }) {
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      alert(error.message);
+      toast(error.message)
     }
   };
   const fetchSuppliers = async () => {
@@ -658,7 +751,7 @@ function NhapKhoManager({ user, apiFetch }) {
       setSuppliers(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      alert(error.message);
+      toast(error.message)
     }
   };
 
@@ -692,16 +785,16 @@ function NhapKhoManager({ user, apiFetch }) {
         body: JSON.stringify({ ten_ncc, lien_he, dia_chi })
       });
       fetchSuppliers();
-      alert("Đã thêm Nhà cung cấp mới thành công!");
+      toast.success("Đã thêm Nhà cung cấp mới thành công!")
     } catch (err) {
-      alert("Không thể thêm nhà cung cấp: " + err.message);
+      toast.error("Không thể thêm nhà cung cấp: " + err.message)
     }
   };
 
   const handleSubmit = async () => {
-    if (!supplier) return alert("Vui lòng chọn nhà cung cấp!");
+    if (!supplier) return toast.error("Vui lòng chọn nhà cung cấp!")
     if (items.some(i => !i.san_pham_id || i.so_luong <= 0)) {
-      return alert("Vui lòng chọn sản phẩm và số lượng hợp lệ cho tất cả các dòng!");
+      return toast.error("Vui lòng chọn sản phẩm và số lượng hợp lệ cho tất cả các dòng!")
     }
 
     try {
@@ -709,21 +802,28 @@ function NhapKhoManager({ user, apiFetch }) {
         method: "POST",
         body: JSON.stringify({ items, supplier_id: supplier })
       });
-      alert("Đã lưu thông tin nhập kho thành công!");
+      toast.success("Đã lưu thông tin nhập kho thành công!")
       setItems([{ id: Date.now(), san_pham_id: "", so_luong: 1, don_gia: 0 }]);
       setSupplier("");
     } catch (error) {
-      alert("Lỗi: " + error.message);
+      toast.error("Lỗi: " + error.message)
     }
+  };
+
+  const isDark = localStorage.getItem('theme') === 'dark';
+  const secondaryBtnStyle = {
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+    color: isDark ? '#FAFAFA' : '#0F172A',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
   };
 
   return (
     <div className="fade-in nhapkho-container">
-      <div className="nk-header">
-        <h2>Nhập Kho</h2>
-        <div className="nk-top-actions">
-          <button className="nk-btn-outline"><FileSpreadsheet size={18} /> Nhập Lô</button>
-          <button className="nk-btn-outline variant-blue"><Save size={18} /> Lưu Nháp</button>
+      <div className="nk-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Nhập Kho</h2>
+        <div className="actions" style={{ display: 'flex', gap: '10px' }}>
+          <button className="secondary-btn" style={{ padding: '8px 16px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', ...secondaryBtnStyle }}><FileSpreadsheet size={16} /> Nhập Lô</button>
+          <button className="secondary-btn" style={{ padding: '8px 16px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', ...secondaryBtnStyle }}><Save size={16} /> Lưu Nháp</button>
         </div>
       </div>
 
@@ -741,10 +841,11 @@ function NhapKhoManager({ user, apiFetch }) {
             ))}
           </select>
           <button
-            className="nk-btn-outline btn-add-supplier"
+            className="secondary-btn"
+            style={{ padding: '8px 16px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', height: '42px', ...secondaryBtnStyle }}
             onClick={handleAddSupplier}
           >
-            <PlusCircle size={18} /> Thêm Mới
+            <PlusCircle size={16} /> Thêm Mới
           </button>
         </div>
 
@@ -801,12 +902,12 @@ function NhapKhoManager({ user, apiFetch }) {
                   />
                 </td>
                 <td>
-                  <div className="nk-actions">
-                    <button className="nk-btn-action edit" title="Sửa">
-                      <Edit size={14} /> Sửa
+                  <div className="actions">
+                    <button className="edit-btn" title="Sửa">
+                      <Edit size={16} /> Sửa
                     </button>
-                    <button className="nk-btn-action delete" onClick={() => handleRemoveItem(item.id)} title="Xóa">
-                      <Trash2 size={14} /> Xóa
+                    <button className="delete-btn" onClick={() => handleRemoveItem(item.id)} title="Xóa">
+                      <Trash2 size={16} /> Xóa
                     </button>
                   </div>
                 </td>
@@ -815,12 +916,12 @@ function NhapKhoManager({ user, apiFetch }) {
           </tbody>
         </table>
 
-        <div className="nk-footer">
-          <button className="nk-btn-add-row" onClick={handleAddItem}>
-            <Plus size={20} /> Thêm Hàng
+        <div className="nk-footer" style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+          <button className="secondary-btn" style={{ display: 'flex', alignItems: 'center', gap: '6px', ...secondaryBtnStyle }} onClick={handleAddItem}>
+            <Plus size={18} /> Thêm Hàng
           </button>
-          <button className="nk-btn-submit" onClick={handleSubmit}>
-            <CheckCircle2 size={20} /> Hoàn Tất Nhập
+          <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleSubmit}>
+            <CheckCircle2 size={18} /> Hoàn Tất Nhập
           </button>
         </div>
       </div>
@@ -832,6 +933,8 @@ function LichSuGiaoDich({ apiFetch }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -859,6 +962,9 @@ function LichSuGiaoDich({ apiFetch }) {
     downloadCsv('lich_su_giao_dich.csv', headers, rows);
   };
 
+  const totalPages = Math.ceil(history.length / itemsPerPage);
+  const currentData = history.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
     <div className="fade-in">
       <header className="content-header">
@@ -872,32 +978,75 @@ function LichSuGiaoDich({ apiFetch }) {
 
       <div className="glass-card scroll-table">
         {loading ? (
-          <div style={{ padding: '24px', color: '#64748b' }}>Đang tải lịch sử giao dịch...</div>
+          <div style={{ padding: '24px' }}>
+            {/* Skeleton Loading */}
+            {[1,2,3,4,5].map(i => (
+              <div key={i} className="skeleton" style={{ height: '40px', width: '100%', marginBottom: '10px', borderRadius: '8px' }}></div>
+            ))}
+          </div>
         ) : error ? (
           <div style={{ padding: '24px', color: '#c2410c' }}>{error}</div>
         ) : history.length === 0 ? (
           <div style={{ padding: '24px', color: '#64748b' }}>Không tìm thấy giao dịch nào.</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Thời gian</th>
-                <th>Sản phẩm</th>
-                <th>Loại</th>
-                <th>Số lượng</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map(item => (
-                <tr key={`${item.id}-${item.thoi_gian || item.ngay_gd}`}>
-                  <td>{formatDateTime(item.thoi_gian || item.ngay_gd)}</td>
-                  <td>{item.ten_san_pham}</td>
-                  <td style={{ textTransform: 'capitalize' }}>{item.loai}</td>
-                  <td>{item.so_luong}</td>
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Thời gian</th>
+                  <th>Sản phẩm</th>
+                  <th>Loại</th>
+                  <th>Số lượng</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {currentData.map(item => (
+                  <tr key={`${item.id}-${item.thoi_gian || item.ngay_gd}`}>
+                    <td>{formatDateTime(item.thoi_gian || item.ngay_gd)}</td>
+                    <td className="font-bold text-gray-800">{item.ten_san_pham}</td>
+                    <td style={{ textTransform: 'capitalize' }}>
+                      <span style={{ 
+                        background: item.loai === 'nhap' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', 
+                        color: item.loai === 'nhap' ? '#059669' : '#dc2626',
+                        padding: '4px 8px', borderRadius: '4px', fontWeight: '600'
+                      }}>
+                        {item.loai}
+                      </span>
+                    </td>
+                    <td className="font-bold" style={{ color: item.loai === 'nhap' ? '#10b981' : '#ef4444' }}>
+                      {item.loai === 'nhap' ? '+' : '-'}{item.so_luong}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            
+            {/* Pagination Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderTop: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: '14px', color: '#64748b' }}>
+                Hiển thị {((currentPage - 1) * itemsPerPage) + 1} đến {Math.min(currentPage * itemsPerPage, history.length)} trong tổng số {history.length} bản ghi
+              </span>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === 1 ? '#f8fafc' : 'white', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', color: '#334155' }}
+                >
+                  Trang trước
+                </button>
+                <span style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', borderRadius: '6px', fontWeight: 'bold' }}>
+                  {currentPage}
+                </span>
+                <button 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === totalPages ? '#f8fafc' : 'white', borderRadius: '6px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', color: '#334155' }}
+                >
+                  Trang sau
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -927,17 +1076,17 @@ function LocationManager({ user, apiFetch }) {
       setForm({ ten_vi_tri: "", mo_ta: "" });
       fetchAll();
     } catch (err) {
-      alert(err.message);
+      toast(err.message)
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Xóa vị trí này?")) return;
+    if (!await confirmToast("Xóa vị trí này?")) return;
     try {
       await apiFetch(`${API}/vi-tri/${id}`, { method: "DELETE" });
       fetchAll();
     } catch (err) {
-      alert(err.message);
+      toast(err.message)
     }
   };
 
@@ -955,6 +1104,7 @@ function LocationManager({ user, apiFetch }) {
           </div>
           <button type="submit" className="confirm-btn">Lưu vị trí</button>
         </form>
+        
         <div className="glass-card scroll-table">
           <table>
             <thead><tr><th>Tên vị trí</th><th>Mô tả</th><th>Thao tác</th></tr></thead>
@@ -970,6 +1120,68 @@ function LocationManager({ user, apiFetch }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* --- SƠ ĐỒ KHO HÀNG VISUAL --- */}
+      <div className="glass-card" style={{ marginTop: '20px' }}>
+        <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+          <MapPin size={22} color="#3b82f6" /> Sơ đồ kho hàng trực quan
+        </h4>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+          gap: '20px',
+          padding: '25px',
+          background: '#f8fafc',
+          borderRadius: '16px',
+          border: '2px dashed #cbd5e1'
+        }}>
+          {list.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#94a3b8', padding: '30px' }}>
+              <Warehouse size={48} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+              <p>Chưa có vị trí kệ hàng nào được tạo.</p>
+            </div>
+          ) : (
+            list.map((item, idx) => (
+              <div key={item.id} style={{
+                background: 'white',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px 15px',
+                textAlign: 'center',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '120px',
+                transition: 'transform 0.2s',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                <Warehouse size={36} color={['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5]} style={{ marginBottom: '12px' }} />
+                <strong style={{ color: '#1e293b', fontSize: '15px' }}>{item.ten_vi_tri}</strong>
+                <span style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {item.mo_ta || "Kệ chứa hàng"}
+                </span>
+                
+                {/* Trạng thái hoạt động */}
+                <div style={{ 
+                  position: 'absolute', top: '-8px', right: '-8px', 
+                  background: '#10b981', color: 'white', fontSize: '10px', fontWeight: 'bold', 
+                  width: '24px', height: '24px', borderRadius: '50%', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                  border: '3px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' 
+                }}>
+                  ✓
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -996,11 +1208,11 @@ function ChuyenKhoManager({ user, apiFetch }) {
     e.preventDefault();
     try {
       await apiFetch(`${API}/chuyen-kho`, { method: "POST", body: JSON.stringify(form) });
-      alert("Chuyển kho thành công!");
+      toast.success("Chuyển kho thành công!")
       const s = await apiFetch(`${API}/ton-kho`);
       setStock(Array.isArray(s) ? s : []);
     } catch (err) {
-      alert(err.message);
+      toast(err.message)
     }
   };
 
@@ -1046,11 +1258,11 @@ function KiemKeManager({ user, apiFetch }) {
     e.preventDefault();
     try {
       const res = await apiFetch(`${API}/kiem-ke`, { method: "POST", body: JSON.stringify(form) });
-      alert(`Đã cập nhật! Chênh lệch: ${res.chenh_lech}`);
+      toast(`Đã cập nhật! Chênh lệch: ${res.chenh_lech}`)
       apiFetch(`${API}/ton-kho`).then(s => setStock(Array.isArray(s) ? s : []));
       setForm({ san_pham_id: "", so_luong_thuc_te: "", ghi_chu: "" });
     } catch (err) {
-      alert(err.message);
+      toast(err.message)
     }
   };
 
@@ -1084,15 +1296,127 @@ function KiemKeManager({ user, apiFetch }) {
   );
 }
 
+// --- CUSTOM TOOLTIP CHO BIỂU ĐỒ ---
+const CustomTooltip = ({ active, payload, label, unit = "" }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="custom-chart-tooltip">
+        <p className="tooltip-label">{label}</p>
+        {payload.map((pld, index) => {
+          if (pld.dataKey === 'forecast' && pld.payload.value !== null && pld.payload.value !== undefined) {
+            return null;
+          }
+          return (
+            <div key={index} className="tooltip-value-row">
+              <span className="tooltip-dot" style={{ backgroundColor: pld.color || pld.fill }} />
+              <span className="tooltip-name">{pld.name}: </span>
+              <span className="tooltip-value">
+                {Number(pld.value).toLocaleString()}{unit}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
+};
+
+// --- DỰ BÁO DOANH THU & XU HƯỚNG ---
+const getRevenueForecastData = (data) => {
+  if (!data || data.length === 0) return [];
+  const n = data.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += data[i].value;
+    sumXY += i * data[i].value;
+    sumXX += i * i;
+  }
+  const denominator = n * sumXX - sumX * sumX;
+  const slope = denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
+  const intercept = (sumY - slope * sumX) / n;
+
+  const result = data.map((d, i) => ({
+    name: d.name,
+    value: d.value,
+    forecast: i === n - 1 ? d.value : null
+  }));
+
+  const lastDateStr = data[n - 1].name;
+  const parts = lastDateStr.split('/');
+  const day = parts[0] ? Number(parts[0]) : 30;
+  const month = parts[1] ? Number(parts[1]) : 10;
+
+  for (let j = 1; j <= 3; j++) {
+    const nextIdx = n - 1 + j;
+    const val = Math.max(0, Math.round(slope * nextIdx + intercept));
+    
+    let nextDay = day + j * 5;
+    let nextMonth = month;
+    if (nextDay > 31) {
+      nextDay = nextDay - 31;
+      nextMonth = month + 1;
+      if (nextMonth > 12) nextMonth = 1;
+    }
+    const nextDateStr = `${String(nextDay).padStart(2, '0')}/${String(nextMonth).padStart(2, '0')}`;
+    
+    result.push({
+      name: `${nextDateStr} (Dự báo)`,
+      value: null,
+      forecast: val,
+      isForecast: true
+    });
+  }
+  return result;
+};
+
+const calculateTrend = (data) => {
+  if (!data || data.length < 2) return { percent: 0, isUp: true };
+  const first = data[0].value;
+  const last = data[data.length - 1].value;
+  const diff = last - first;
+  const percent = first !== 0 ? ((diff / first) * 100).toFixed(1) : 0;
+  return { percent: Math.abs(percent), isUp: diff >= 0 };
+};
+
 // Dashboard (Đã gộp Báo Cáo + Dự báo AI)
-function Dashboard({ user, apiFetch }) {
+function Dashboard({ user, apiFetch, theme }) {
+  const isDark = theme === 'dark';
+  const subCardStyles = {
+    Cao: {
+      bg: isDark ? 'rgba(34, 197, 94, 0.15)' : '#dcfce7',
+      color: isDark ? '#4ade80' : '#15803d'
+    },
+    TrungBinh: {
+      bg: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fef3c7',
+      color: isDark ? '#facc15' : '#b45309'
+    },
+    Thap: {
+      bg: isDark ? 'rgba(148, 163, 184, 0.15)' : '#e2e8f0',
+      color: isDark ? '#cbd5e1' : '#475569'
+    },
+    OnDinh: {
+      bg: isDark ? 'rgba(99, 102, 241, 0.15)' : '#eef2ff',
+      color: isDark ? '#818cf8' : '#4338ca'
+    },
+    BienDong: {
+      bg: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fef2f2',
+      color: isDark ? '#fca5a5' : '#b91c1c'
+    },
+    KhoDuBao: {
+      bg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#f0fdf4',
+      color: isDark ? '#34d399' : '#047857'
+    }
+  };
 
   const [stats, setStats] = useState({ tongSanPham: 0, tongTonKho: 0, sapHetHang: 0, doiTac: 0, aiDuBao: 0 });
   const [chartData, setChartData] = useState(lineDataSample);
   const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
   const [dashboardError, setDashboardError] = useState(null);
-  const [abcXyzSummary, setAbcXyzSummary] = useState({ A: 0, B: 0, C: 0, X: 0, Y: 0, Z: 0 });
+  const [abcXyzSummary, setAbcXyzSummary] = useState({ Cao: 0, TrungBinh: 0, Thap: 0, OnDinh: 0, BienDong: 0, KhoDuBao: 0 });
+  const [productClassDetails, setProductClassDetails] = useState({});
   const [historyAvailable, setHistoryAvailable] = useState(true);
 
   // State cho AI Prediction
@@ -1116,43 +1440,109 @@ function Dashboard({ user, apiFetch }) {
     { name: 'CN', nhap: 3490, xuat: 4300 },
   ]);
 
-  const exportDashboardToExcel = (stockData, classification) => {
-    const headers = ['Sản phẩm', 'Số lượng', 'Vị trí', 'Tình trạng', 'ABC', 'X/Y/Z'];
-    const rows = stockData.map(item => ({
-      'Sản phẩm': item.ten_san_pham,
-      'Số lượng': item.so_luong,
-      'Vị trí': item.vi_tri || 'Kệ chờ',
-      'Tình trạng': item.so_luong < 10 ? 'Sắp hết' : 'Ổn định',
-      'ABC': item.phan_loai_abc || '',
-      'X/Y/Z': historyAvailable ? `${classification.X || 0}/${classification.Y || 0}/${classification.Z || 0}` : ''
-    }));
+  const exportDashboardToExcel = (stockData, details) => {
+    const headers = ['Sản phẩm', 'Số lượng', 'Vị trí', 'Tình trạng', 'Mức độ quan trọng', 'Độ ổn định'];
+    const rows = stockData.map(item => {
+      const detail = details[item.id] || details[item.san_pham_id] || {};
+      return {
+        'Sản phẩm': item.ten_san_pham,
+        'Số lượng': item.so_luong,
+        'Vị trí': item.vi_tri || 'Kệ chờ',
+        'Tình trạng': item.so_luong < 10 ? 'Sắp hết' : 'Ổn định',
+        'Mức độ quan trọng': detail.abcClass || item.phan_loai_abc || 'Thấp',
+        'Độ ổn định': detail.xyzClass || (historyAvailable ? 'Khó dự báo' : '')
+      };
+    });
     downloadCsv('dashboard_ton_kho.csv', headers, rows);
   };
 
   const exportDashboardToPdf = (stockData, statsData, classification) => {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    doc.setFontSize(16);
-    doc.text('Báo cáo Dashboard Kho', 40, 50);
-    doc.setFontSize(11);
-    doc.text(`Ngày tạo: ${new Date().toLocaleString('vi-VN')}`, 40, 70);
-    doc.text(`Tổng sản phẩm: ${statsData.tongSanPham}`, 40, 90);
-    doc.text(`Tổng tồn kho: ${statsData.tongTonKho}`, 40, 105);
-    doc.text(`Sắp hết: ${statsData.sapHetHang}`, 40, 120);
-    doc.text(`Nhà cung cấp: ${statsData.doiTac}`, 40, 135);
-
-    autoTable(doc, {
-      startY: 155,
-      head: [[ 'Sản phẩm', 'Số lượng', 'Vị trí', 'Tình trạng' ]],
-      body: stockData.map(item => [
-        item.ten_san_pham,
-        item.so_luong,
-        item.vi_tri || 'Kệ chờ',
-        item.so_luong < 10 ? 'Sắp hết' : 'Ổn định'
-      ]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [16, 185, 129] }
-    });
-    doc.save('dashboard_report.pdf');
+    try {
+      console.log('Dữ liệu PDF:', { stockData, statsData });
+      
+      // Tạo element HTML cho PDF
+      const element = document.createElement('div');
+      element.style.padding = '20px';
+      element.style.fontFamily = 'Arial, sans-serif';
+      element.style.backgroundColor = '#ffffff';
+      
+      // Tạo HTML content
+      let tableRows = '';
+      if (stockData && stockData.length > 0) {
+        tableRows = stockData.map((item, idx) => `
+          <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; border-bottom: 1px solid #e2e8f0;">
+            <td style="border: 1px solid #ddd; padding: 10px; text-align: left;">${item.ten_san_pham || '-'}</td>
+            <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">${item.so_luong || 0}</td>
+            <td style="border: 1px solid #ddd; padding: 10px; text-align: left;">${item.vi_tri || 'Kệ chờ'}</td>
+            <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">
+              <span style="padding: 4px 8px; border-radius: 4px; font-size: 11px; ${item.so_luong < 10 ? 'background-color: #fee2e2; color: #b91c1c;' : 'background-color: #dcfce7; color: #166534;'}">${item.so_luong < 10 ? 'Sắp hết' : 'Ổn định'}</span>
+            </td>
+          </tr>
+        `).join('');
+      } else {
+        tableRows = '<tr><td colspan="4" style="border: 1px solid #ddd; padding: 10px; text-align: center; color: #94a3b8;">Không có dữ liệu</td></tr>';
+      }
+      
+      element.innerHTML = `
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #0f172a; margin: 10px 0; font-size: 28px;">BÁO CÁO DASHBOARD KHO</h1>
+          <p style="color: #64748b; font-size: 12px; margin: 5px 0;">Ngày tạo: ${new Date().toLocaleString('vi-VN')}</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #10b981; padding-bottom: 8px;">Thống kê</h3>
+          <ul style="font-size: 14px; line-height: 2; color: #1e293b; padding-left: 20px;">
+            <li><strong>Tổng sản phẩm:</strong> ${(statsData && statsData.tongSanPham) || 0}</li>
+            <li><strong>Tổng tồn kho:</strong> ${(statsData && statsData.tongTonKho) || 0} sản phẩm</li>
+            <li><strong>Sắp hết hàng:</strong> ${(statsData && statsData.sapHetHang) || 0} sản phẩm</li>
+            <li><strong>Nhà cung cấp:</strong> ${(statsData && statsData.doiTac) || 0}</li>
+          </ul>
+        </div>
+        
+        <div>
+          <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #10b981; padding-bottom: 8px; margin-bottom: 15px;">Chi tiết sản phẩm</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+              <tr style="background-color: #10b981; color: white;">
+                <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Sản phẩm</th>
+                <th style="border: 1px solid #ddd; padding: 12px; text-align: center;">Số lượng</th>
+                <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Vị trí</th>
+                <th style="border: 1px solid #ddd; padding: 12px; text-align: center;">Tình trạng</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </div>
+        
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #64748b; font-size: 11px;">
+          <p>Báo cáo được tạo tự động - ${new Date().toLocaleString('vi-VN')}</p>
+        </div>
+      `;
+      
+      // Thêm element vào DOM tạm thời
+      document.body.appendChild(element);
+      
+      // Cấu hình PDF
+      const opt = {
+        margin: 10,
+        filename: 'dashboard_report.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+      };
+      
+      // Tạo PDF từ HTML element
+      html2pdf().set(opt).from(element).save().then(() => {
+        // Xóa element sau khi xuất xong
+        document.body.removeChild(element);
+        toast.success('Xuất PDF thành công!');
+      });
+    } catch (error) {
+      console.error('Lỗi xuất PDF:', error);
+      toast.error('Lỗi xuất PDF: ' + error.message);
+    }
   };
 
   useEffect(() => {
@@ -1185,9 +1575,11 @@ function Dashboard({ user, apiFetch }) {
           try {
             const historyResponse = await apiFetch(`${API}/lich-su-giao-dich`);
             const history = Array.isArray(historyResponse) ? historyResponse : [];
-            setAbcXyzSummary(calculateAbcXyzSummary(prods, st, history));
+            const res = calculateAbcXyzSummary(prods, st, history);
+            setAbcXyzSummary(res.summary);
+            setProductClassDetails(res.details);
           } catch (err) {
-            console.warn("Không lấy được dữ liệu lịch sử giao dịch để phân loại ABC/XYZ:", err);
+            console.warn("Không lấy được dữ liệu lịch sử giao dịch để phân loại hàng hóa:", err);
             setHistoryAvailable(false);
           }
         } else {
@@ -1211,6 +1603,17 @@ function Dashboard({ user, apiFetch }) {
     loadDashboard();
   }, []);
 
+  useEffect(() => {
+    if (window.location.hash === '#ai-predictions') {
+      setTimeout(() => {
+        const element = document.getElementById('ai-predictions');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 500);
+    }
+  }, []);
+
   const categoryData = products.reduce((acc, current) => {
     const cat = current.danh_muc || "Khác";
     const existing = acc.find(i => i.name === cat);
@@ -1223,26 +1626,72 @@ function Dashboard({ user, apiFetch }) {
 
   const refreshAbcClassification = async () => {
     try {
-      await apiFetch(`${AI_API}/classify-abc`, { method: 'POST' });
+      // Bước 1: Lấy lịch sử giao dịch từ backend
       const historyResponse = await apiFetch(`${API}/lich-su-giao-dich`);
       const history = Array.isArray(historyResponse) ? historyResponse : [];
-      setAbcXyzSummary(calculateAbcXyzSummary(products, stock, history));
+
+      // Bước 2: Gọi AI server phân loại ABC + XYZ và lưu vào DB
+      let aiServerOk = false;
+      let xyzOk = false;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
+        // Phân loại ABC
+        const aiRes = await fetch(`${AI_API}/classify-abc`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal
+        });
+        if (aiRes.ok) aiServerOk = true;
+
+        // Phân loại XYZ (mới - lưu phan_loai_xyz vào DB)
+        const xyzRes = await fetch(`${AI_API}/classify-xyz`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (xyzRes.ok) xyzOk = true;
+
+        clearTimeout(timeout);
+      } catch (aiErr) {
+        console.warn('AI server không khả dụng, tính toán phân loại cục bộ:', aiErr.message);
+      }
+
+      // Bước 3: Tính toán phân loại ABC/XYZ cục bộ để hiển thị ngay
+      const res = calculateAbcXyzSummary(products, stock, history);
+      setAbcXyzSummary(res.summary);
+      setProductClassDetails(res.details);
       setHistoryAvailable(true);
-      alert('Đã cập nhật phân loại ABC thành công!');
+
+      if (aiServerOk && xyzOk) {
+        toast.success('Đã cập nhật phân loại ABC + XYZ thành công! (Đã lưu vào DB)');
+      } else if (aiServerOk) {
+        toast.success('Đã cập nhật phân loại ABC thành công!');
+      } else {
+        toast.success('Đã cập nhật phân loại hàng hóa (tính toán cục bộ — AI server chưa chạy)');
+      }
     } catch (err) {
-      alert('Không thể cập nhật phân loại ABC: ' + err.message);
+      console.error('refreshAbcClassification error:', err);
+      let errorMsg = err.message;
+      if (err.message === 'Lỗi kết nối API' || err.name === 'TypeError') {
+        errorMsg = 'Không thể kết nối backend. Vui lòng kiểm tra server Node.js đang chạy.';
+      }
+      toast.error('Không thể cập nhật phân loại hàng hóa: ' + errorMsg);
     }
   };
+
+  const trend = calculateTrend(revenueData);
+  const revenueForecastData = getRevenueForecastData(revenueData);
 
   return (
     <div className="dashboard-wrapper fade-in" style={{ paddingBottom: '40px' }}>
       <div className="report-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2>Dashboard & Báo Cáo Thống Kê</h2>
         <div className="report-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button onClick={() => exportDashboardToExcel(stock, abcXyzSummary)} className="btn-base btn-excel" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}><FileSpreadsheet size={16} /> Xuất Excel</button>
+          <button onClick={() => exportDashboardToExcel(stock, productClassDetails)} className="btn-base btn-excel" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}><FileSpreadsheet size={16} /> Xuất Excel</button>
           <button onClick={() => exportDashboardToPdf(stock, stats, abcXyzSummary)} className="btn-base btn-pdf" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}><FileText size={16} /> Xuất PDF</button>
           {(user.vai_tro === 'admin' || user.vai_tro === 'quan_ly') && (
-            <button onClick={refreshAbcClassification} className="btn-base btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}><BarChart3 size={16} /> Cập nhật ABC</button>
+            <button onClick={refreshAbcClassification} className="btn-base btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', color: isDark ? '#f8fafc' : '#334155', border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}><BarChart3 size={16} /> Cập nhật phân loại</button>
           )}
         </div>
       </div>
@@ -1253,84 +1702,113 @@ function Dashboard({ user, apiFetch }) {
       )}
 
       <div className="stat-cards">
-        <StatItem icon={<Box size={24} color="#3b82f6" />} label="Sản phẩm" value={stats.tongSanPham} bg="#eff6ff" />
-        <StatItem icon={<ShoppingCart size={24} color="#10b981" />} label="Tổng tồn" value={stats.tongTonKho} bg="#ecfdf5" />
-        <StatItem icon={<AlertTriangle size={24} color="#ef4444" />} label="Cảnh báo hàng" value={stats.sapHetHang} bg="#fff1f2" />
-        <StatItem icon={<Users size={24} color="#f59e0b" />} label="Nhà cung cấp" value={stats.doiTac} bg="#fffbeb" />
+        <StatItem icon={<Box size={24} color="#3b82f6" />} label="Sản phẩm" value={stats.tongSanPham} type="info" theme={theme} />
+        <StatItem icon={<ShoppingCart size={24} color="#10b981" />} label="Tổng tồn" value={stats.tongTonKho} type="success" theme={theme} />
+        <StatItem icon={<AlertTriangle size={24} color="#ef4444" />} label="Cảnh báo hàng" value={stats.sapHetHang} type="danger" theme={theme} />
+        <StatItem icon={<Users size={24} color="#f59e0b" />} label="Nhà cung cấp" value={stats.doiTac} type="warning" theme={theme} />
       </div>
       <div className="abc-xyz-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '20px' }}>
-        <div className="report-card" style={{ padding: '20px', borderRadius: '16px', background: '#ffffff', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.05)' }}>
-          <h3 style={{ marginBottom: '12px', color: '#1e293b' }}>Phân loại ABC</h3>
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <h3 style={{ marginBottom: '12px' }}>Nhóm hàng theo mức độ quan trọng</h3>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ flex: 1, background: '#dcfce7', padding: '16px', borderRadius: '14px' }}><strong>A</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.A}</div></div>
-            <div style={{ flex: 1, background: '#fef3c7', padding: '16px', borderRadius: '14px' }}><strong>B</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.B}</div></div>
-            <div style={{ flex: 1, background: '#e2e8f0', padding: '16px', borderRadius: '14px' }}><strong>C</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.C}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.Cao.bg, color: subCardStyles.Cao.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.Cao.color }}>Cao</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.Cao}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.TrungBinh.bg, color: subCardStyles.TrungBinh.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.TrungBinh.color }}>Trung bình</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.TrungBinh}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.Thap.bg, color: subCardStyles.Thap.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.Thap.color }}>Thấp</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.Thap}</div></div>
           </div>
         </div>
-        <div className="report-card" style={{ padding: '20px', borderRadius: '16px', background: '#ffffff', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.05)' }}>
-          <h3 style={{ marginBottom: '12px', color: '#1e293b' }}>Phân loại XYZ</h3>
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <h3 style={{ marginBottom: '12px' }}>Nhóm hàng theo độ ổn định nhu cầu</h3>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ flex: 1, background: '#eef2ff', padding: '16px', borderRadius: '14px' }}><strong>X</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.X}</div></div>
-            <div style={{ flex: 1, background: '#fef2f2', padding: '16px', borderRadius: '14px' }}><strong>Y</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.Y}</div></div>
-            <div style={{ flex: 1, background: '#f0fdf4', padding: '16px', borderRadius: '14px' }}><strong>Z</strong><div style={{ marginTop: '10px', fontSize: '28px' }}>{abcXyzSummary.Z}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.OnDinh.bg, color: subCardStyles.OnDinh.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.OnDinh.color }}>Ổn định</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.OnDinh}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.BienDong.bg, color: subCardStyles.BienDong.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.BienDong.color }}>Biến động</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.BienDong}</div></div>
+            <div style={{ flex: 1, background: subCardStyles.KhoDuBao.bg, color: subCardStyles.KhoDuBao.color, padding: '16px', borderRadius: '14px', transition: 'all 0.3s' }}><strong style={{ color: subCardStyles.KhoDuBao.color }}>Khó dự báo</strong><div style={{ marginTop: '10px', fontSize: '28px', fontWeight: 'bold' }}>{abcXyzSummary.KhoDuBao}</div></div>
           </div>
         </div>
       </div>
       {(!historyAvailable && (user.vai_tro === 'admin' || user.vai_tro === 'quan_ly')) && (
         <div style={{ marginTop: '16px', padding: '14px', borderRadius: '12px', background: '#fef3f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
-          Không thể lấy dữ liệu lịch sử giao dịch để phân loại ABC/XYZ. Vui lòng kiểm tra quyền truy cập hoặc backend `/lich-su-giao-dich`.
+          Không thể lấy dữ liệu lịch sử giao dịch để phân loại hàng hóa. Vui lòng kiểm tra quyền truy cập hoặc backend `/lich-su-giao-dich`.
         </div>
       )}
 
       <div className="report-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', marginTop: '20px' }}>
-        <div className="report-card" style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-          <h3 style={{ marginBottom: '15px', color: '#1e293b' }}>Tồn kho thực tế</h3>
+        {/* Tồn kho thực tế */}
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ margin: 0 }}>Tồn kho thực tế</h3>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#3b82f6', background: isDark ? 'rgba(59, 130, 246, 0.15)' : '#eff6ff', padding: '2px 8px', borderRadius: '4px' }}>Real-time</span>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
               <defs>
                 <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={isDark ? 0.45 : 0.25} />
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip />
-              <Area type="monotone" dataKey="uv" stroke="#3b82f6" strokeWidth={3} fill="url(#colorUv)" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.08)" : "#f1f5f9"} />
+              <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} />
+              <YAxis fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area 
+                type="monotone" 
+                dataKey="uv" 
+                stroke="#3b82f6" 
+                strokeWidth={3} 
+                fill="url(#colorUv)" 
+                activeDot={{ r: 6, stroke: isDark ? "#0a0a0a" : "#ffffff", strokeWidth: 2, fill: "#3b82f6" }} 
+                animationDuration={1500}
+                name="Tồn kho"
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="report-card" style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-          <h3 style={{ marginBottom: '15px', color: '#1e293b' }}>Nhập / Xuất Hàng</h3>
+        {/* Nhập / Xuất */}
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ margin: 0 }}>Nhập / Xuất</h3>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#10b981', background: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ecfdf5', padding: '2px 8px', borderRadius: '4px' }}>Hàng tuần</span>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={ioData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip />
-              <Bar dataKey="nhap" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={12} />
-              <Bar dataKey="xuat" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={12} />
+            <BarChart data={ioData} barGap={6} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.08)" : "#f1f5f9"} />
+              <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} padding={{ left: 10, right: 10 }} />
+              <YAxis fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="nhap" name="Nhập kho" fill="#10b981" radius={[4, 4, 0, 0]} barSize={14} animationDuration={1500} />
+              <Bar dataKey="xuat" name="Xuất kho" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={14} animationDuration={1500} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="report-card" style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-          <h3 style={{ marginBottom: '15px', color: '#1e293b' }}>Doanh Thu Tháng</h3>
+        {/* Doanh thu tháng */}
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ margin: 0 }}>Doanh Thu Tháng</h3>
+              <span className={`trend-badge ${trend.isUp ? 'up' : 'down'}`}>
+                {trend.isUp ? '↑' : '↓'} {trend.percent}%
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#f59e0b', background: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fffbeb', padding: '2px 8px', borderRadius: '4px' }}>Kế hoạch & Dự báo</span>
+          </div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={revenueData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
-            </BarChart>
+            <ComposedChart data={revenueForecastData} margin={{ top: 10, right: 5, left: -5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.08)" : "#f1f5f9"} />
+              <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} />
+              <YAxis fontSize={11} tickLine={false} axisLine={false} tick={{ fill: isDark ? "#a1a1aa" : "#64748b" }} />
+              <Tooltip content={<CustomTooltip unit="đ" />} />
+              <ReferenceLine y={5000} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'Mục tiêu: 5M', fill: '#f59e0b', position: 'top', fontSize: 10, fontWeight: 700 }} />
+              <Bar dataKey="value" name="Doanh thu thực tế" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={16} animationDuration={1500} />
+              <Line type="monotone" dataKey="forecast" name="Doanh thu dự báo" stroke="#ec4899" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, stroke: "#ec4899", strokeWidth: 2, fill: "#fff" }} activeDot={{ r: 6 }} animationDuration={1500} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="report-card" style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-          <h3 style={{ marginBottom: '15px', color: '#1e293b' }}>Top Sản Phẩm Bán Chạy</h3>
+        {/* Top Sản Phẩm Bán Chạy */}
+        <div className="glass-card" style={{ padding: '20px' }}>
+          <h3 style={{ marginBottom: '15px' }}>Top Sản Phẩm Bán Chạy</h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -1339,26 +1817,27 @@ function Dashboard({ user, apiFetch }) {
                 outerRadius={100}
                 paddingAngle={5}
                 dataKey="value"
+                animationDuration={1500}
               >
                 {(categoryData.length > 0 ? categoryData : [{ name: 'Trống', value: 1 }]).map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="report-card mt-4" style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', marginTop: '20px' }}>
+      <div className="glass-card mt-4" style={{ padding: '20px', marginTop: '20px' }}>
         <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ color: '#1e293b' }}>Chi tiết tồn kho hiện tại</h3>
-          <div className="text-muted font-medium" style={{ color: '#64748b' }}>Tổng: {stock.length} sản phẩm</div>
+          <h3>Chi tiết tồn kho hiện tại</h3>
+          <div className="text-muted font-medium" style={{ color: isDark ? '#a1a1aa' : '#64748b' }}>Tổng: {stock.length} sản phẩm</div>
         </div>
         <div className="scroll-table mt-4" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+              <tr style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e2e8f0', color: isDark ? '#a1a1aa' : '#64748b' }}>
                 <th style={{ padding: '12px' }}>Sản phẩm</th>
                 <th style={{ padding: '12px' }}>Số lượng</th>
                 <th style={{ padding: '12px' }}>Vị trí</th>
@@ -1367,18 +1846,22 @@ function Dashboard({ user, apiFetch }) {
             </thead>
             <tbody>
               {stock.slice(0, 10).map(item => (
-                <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <tr key={item.id} style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid #f1f5f9' }}>
                   <td className="font-bold" style={{ padding: '12px', fontWeight: 'bold' }}>{item.ten_san_pham}</td>
-                  <td style={{ padding: '12px' }}><span className="stock-count" style={{ background: '#f1f5f9', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' }}>{item.so_luong}</span></td>
-                  <td className="text-muted" style={{ padding: '12px', color: '#64748b' }}>{item.vi_tri || "Kệ A1"}</td>
+                  <td style={{ padding: '12px' }}><span className="stock-count" style={{ background: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)', color: isDark ? '#60a5fa' : '#2563eb', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' }}>{item.so_luong}</span></td>
+                  <td className="text-muted" style={{ padding: '12px', color: isDark ? '#a1a1aa' : '#64748b' }}>{item.vi_tri || "Kệ A1"}</td>
                   <td style={{ padding: '12px' }}>
                     <span style={{
                       padding: '4px 8px',
                       borderRadius: '4px',
                       fontSize: '12px',
                       fontWeight: 'bold',
-                      background: item.so_luong < 10 ? '#fee2e2' : '#dcfce3',
-                      color: item.so_luong < 10 ? '#ef4444' : '#10b981'
+                      background: item.so_luong < 10 
+                        ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2') 
+                        : (isDark ? 'rgba(16, 185, 129, 0.2)' : '#dcfce3'),
+                      color: item.so_luong < 10 
+                        ? (isDark ? '#fca5a5' : '#ef4444') 
+                        : (isDark ? '#86efac' : '#10b981')
                     }}>
                       {item.so_luong < 10 ? 'Sắp hết' : 'Ổn định'}
                     </span>
@@ -1391,7 +1874,7 @@ function Dashboard({ user, apiFetch }) {
       </div>
 
       {/* === SECTION DỰ BÁO NHU CẦU AI === */}
-      <div style={{
+      <div id="ai-predictions" style={{
         marginTop: '30px',
         background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
         borderRadius: '16px',
@@ -1416,7 +1899,7 @@ function Dashboard({ user, apiFetch }) {
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
                 animation: 'gradientShift 3s linear infinite'
-              }}>🤖 Dự Báo Nhu Cầu Sản Phẩm</h2>
+              }}> Dự Báo Nhu Cầu Sản Phẩm</h2>
               <span style={{ background: 'linear-gradient(135deg, #f472b6, #a78bfa)', padding: '4px 12px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, color: 'white', boxShadow: '0 2px 8px rgba(167,139,250,0.3)' }}>BETA</span>
             </div>
             <p style={{ margin: 0, color: '#a5b4fc', fontSize: '14px' }}>Phân tích dữ liệu lịch sử giao dịch để dự đoán nhu cầu 30 ngày tới</p>
@@ -1635,8 +2118,12 @@ function Dashboard({ user, apiFetch }) {
               </table>
             </div>
 
-            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#6366f1' }}>
-              <span>Phương pháp: Linear Regression | Dữ liệu: 12 tháng gần nhất</span>
+            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#6366f1', flexWrap: 'wrap', gap: '6px' }}>
+              <span>
+                🤖 Mô hình: LSTM → ARIMA → Linear Regression (Feature Engineering) &nbsp;|&nbsp;
+                📅 Features: Tháng, Quý, Mùa, Lịch lễ tết VN &nbsp;|&nbsp;
+                📊 Dữ liệu: 12 tháng gần nhất
+              </span>
               <span>Cập nhật: {new Date().toLocaleString('vi-VN')}</span>
             </div>
           </div>
@@ -1655,53 +2142,142 @@ function Dashboard({ user, apiFetch }) {
         }
       `}</style>
 
-      {/* AI Report Modal */}
+      {/* AI Report Modal - Báo cáo chuyên sâu (MAE, RMSE, MAPE, Heatmap, Feature Engineering) */}
       {showAiReport && aiReport && (
-        <div className="modal-overlay" onClick={() => setShowAiReport(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '800px', maxWidth: '90%', background: 'white', padding: '24px', borderRadius: '16px', color: 'black' }}>
-            <h2 style={{ marginTop: 0, color: '#1e293b' }}>📊 Báo cáo AI Chuyên Sâu</h2>
+        <div className="modal-overlay" onClick={() => setShowAiReport(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '900px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', background: 'white', padding: '28px', borderRadius: '20px', color: 'black' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ marginTop: 0, marginBottom: 0, color: '#1e293b', fontSize: '20px' }}>📊 Báo Cáo AI Chuyên Sâu</h2>
+              <button onClick={() => setShowAiReport(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-              <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#334155', fontSize: '16px' }}>Độ Chính Xác Mô Hình</h3>
-                <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#10b981' }}>
+            {/* === PHẦN 1: Chỉ số đánh giá mô hình (MAE, RMSE, MAPE) === */}
+            <h3 style={{ color: '#334155', fontSize: '15px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>📐 Chỉ số đánh giá mô hình (Model Metrics)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+              {/* R2 Score */}
+              <div style={{ padding: '16px', background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)', borderRadius: '12px', border: '1px solid #a7f3d0', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#065f46', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>R² Score</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#059669' }}>
                   {((aiReport.accuracy_metrics?.avg_r2_score || 0) * 100).toFixed(1)}%
                 </div>
-                <p style={{ color: '#64748b', margin: 0, fontSize: '13px' }}>R2 Score Trung bình</p>
-
-                <div style={{ marginTop: '20px' }}>
-                  <h4 style={{ color: '#475569', fontSize: '14px', marginBottom: '8px' }}>Lịch sử huấn luyện gần đây:</h4>
-                  <ul style={{ paddingLeft: '20px', color: '#64748b', fontSize: '13px', margin: 0 }}>
-                    {aiReport.models_history?.map((m, i) => (
-                      <li key={i}>{m.model_name} ({m.version}) - R2: {m.r2_score.toFixed(2)}</li>
-                    ))}
-                  </ul>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Hệ số xác định</div>
+              </div>
+              {/* MAE */}
+              <div style={{ padding: '16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #93c5fd', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>MAE</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2563eb' }}>
+                  {(aiReport.accuracy_metrics?.avg_mae || 0).toFixed(2)}
                 </div>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Mean Abs. Error</div>
+              </div>
+              {/* RMSE */}
+              <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fefce8, #fef9c3)', borderRadius: '12px', border: '1px solid #fde047', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#854d0e', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>RMSE</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#d97706' }}>
+                  {(aiReport.accuracy_metrics?.avg_rmse || 0).toFixed(2)}
+                </div>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Root Mean Sq. Error</div>
+              </div>
+              {/* MAPE */}
+              <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fdf4ff, #fae8ff)', borderRadius: '12px', border: '1px solid #d8b4fe', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#6b21a8', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>MAPE</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7c3aed' }}>
+                  {(aiReport.accuracy_metrics?.avg_mape || 0).toFixed(1)}%
+                </div>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Mean Abs. % Error</div>
+              </div>
+            </div>
+
+            {/* === PHẦN 2: Lịch sử huấn luyện + Heatmap === */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              {/* Lịch sử huấn luyện */}
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ marginTop: 0, color: '#334155', fontSize: '14px', marginBottom: '12px' }}>🕐 Lịch sử huấn luyện gần đây</h4>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <th style={{ padding: '8px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Mô hình</th>
+                      <th style={{ padding: '8px', textAlign: 'center', color: '#475569', fontWeight: 600 }}>R²</th>
+                      <th style={{ padding: '8px', textAlign: 'center', color: '#475569', fontWeight: 600 }}>MAE</th>
+                      <th style={{ padding: '8px', textAlign: 'center', color: '#475569', fontWeight: 600 }}>RMSE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiReport.models_history?.map((m, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px', color: '#1e293b' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {m.is_active && <span style={{ background: '#10b981', color: 'white', fontSize: '9px', padding: '2px 5px', borderRadius: '4px', fontWeight: 700 }}>ACTIVE</span>}
+                            {(m.model_name || '').replace('v2', '').trim()}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', color: '#059669', fontWeight: 600 }}>{(m.r2_score || 0).toFixed(2)}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', color: '#2563eb' }}>{(m.mae || 0).toFixed(2)}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', color: '#d97706' }}>{(m.rmse || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
-              <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ marginTop: 0, color: '#334155', fontSize: '16px', marginBottom: '16px' }}>Heatmap Mức Độ Bận Rộn</h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={aiReport.heatmap} layout="vertical" margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              {/* Heatmap bận rộn */}
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ marginTop: 0, color: '#334155', fontSize: '14px', marginBottom: '12px' }}>🔥 Heatmap Mức Độ Bận Rộn</h4>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={aiReport.heatmap} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                     <XAxis type="number" hide />
-                    <YAxis dataKey="day" type="category" width={40} fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
-                    <Tooltip cursor={{ fill: 'rgba(0,0,0,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                    <YAxis dataKey="day" type="category" width={42} fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
+                    <Tooltip cursor={{ fill: 'rgba(0,0,0,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '12px' }} />
                     <Bar dataKey="morning" stackId="a" fill="#60a5fa" name="Sáng" />
                     <Bar dataKey="afternoon" stackId="a" fill="#f472b6" name="Chiều" />
                     <Bar dataKey="evening" stackId="a" fill="#a78bfa" name="Tối" />
                   </BarChart>
                 </ResponsiveContainer>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'center' }}>
+                  {[['#60a5fa','Sáng'],['#f472b6','Chiều'],['#a78bfa','Tối']].map(([c,l]) => (
+                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#64748b' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: c, display: 'inline-block' }} />{l}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            {/* === PHẦN 3: Feature Engineering đã sử dụng === */}
+            {aiReport.feature_engineering && (
+              <div style={{ padding: '16px', background: 'linear-gradient(135deg, #f0f9ff, #e0f2fe)', borderRadius: '12px', border: '1px solid #7dd3fc', marginBottom: '16px' }}>
+                <h4 style={{ marginTop: 0, color: '#0369a1', fontSize: '14px', marginBottom: '10px' }}>⚙️ Feature Engineering đã áp dụng</h4>
+                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '13px' }}>
+                  <div>
+                    <span style={{ fontWeight: 600, color: '#0369a1' }}>📅 Thuộc tính thời gian:</span>
+                    <span style={{ color: '#334155', marginLeft: '6px' }}>
+                      {(aiReport.feature_engineering.time_features || []).join(', ')}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: 600, color: '#0369a1' }}>🎉 Biến ngoại vi:</span>
+                    <span style={{ color: '#334155', marginLeft: '6px' }}>
+                      {(aiReport.feature_engineering.external_variables || []).join(', ')}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: 600, color: '#0369a1' }}>🔢 Sliding Window:</span>
+                    <span style={{ color: '#334155', marginLeft: '6px' }}>
+                      {aiReport.feature_engineering.sliding_window}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setShowAiReport(false)}
-                style={{ padding: '8px 16px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '10px 24px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontSize: '14px' }}
               >
-                Đóng
+                Đóng báo cáo
               </button>
             </div>
           </div>
@@ -1713,13 +2289,56 @@ function Dashboard({ user, apiFetch }) {
 
 
 // Hàm bổ trợ StatItem (Dán ngay dưới hàm Dashboard)
-function StatItem({ icon, label, value, bg }) {
+function StatItem({ icon, label, value, type, theme }) {
+  const isDark = theme === 'dark';
+  const stateStyles = {
+    info: {
+      bg: isDark ? 'rgba(59, 130, 246, 0.12)' : '#eff6ff',
+      border: isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.15)',
+      color: isDark ? '#60a5fa' : '#1e40af',
+      textMuted: isDark ? '#93c5fd' : '#2563eb'
+    },
+    success: {
+      bg: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ecfdf5',
+      border: isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.15)',
+      color: isDark ? '#34d399' : '#065f46',
+      textMuted: isDark ? '#6ee7b7' : '#059669'
+    },
+    danger: {
+      bg: isDark ? 'rgba(239, 68, 68, 0.12)' : '#fff1f2',
+      border: isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.15)',
+      color: isDark ? '#f87171' : '#991b1b',
+      textMuted: isDark ? '#fca5a5' : '#e11d48'
+    },
+    warning: {
+      bg: isDark ? 'rgba(245, 158, 11, 0.12)' : '#fffbeb',
+      border: isDark ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.15)',
+      color: isDark ? '#fbbf24' : '#854d0e',
+      textMuted: isDark ? '#fde047' : '#d97706'
+    },
+    analysis: {
+      bg: isDark ? 'rgba(167, 139, 250, 0.12)' : '#faf5ff',
+      border: isDark ? 'rgba(167, 139, 250, 0.25)' : 'rgba(167, 139, 250, 0.15)',
+      color: isDark ? '#c084fc' : '#5b21b6',
+      textMuted: isDark ? '#d8b4fe' : '#7c3aed'
+    }
+  };
+
+  const style = stateStyles[type] || stateStyles.info;
+
   return (
-    <div className="stat-card-inner">
-      <div className="stat-icon-wrapper" style={{ backgroundColor: bg }}>{icon}</div>
+    <div className="stat-card-inner" style={{ 
+      backgroundColor: style.bg, 
+      borderColor: style.border, 
+      borderStyle: 'solid', 
+      borderWidth: '1px'
+    }}>
+      <div className="stat-icon-wrapper" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
+        {icon}
+      </div>
       <div className="stat-info">
-        <p>{label}</p>
-        <h3>{value.toLocaleString()}</h3>
+        <p style={{ color: style.textMuted, fontWeight: 600 }}>{label}</p>
+        <h3 style={{ color: style.color, fontSize: '1.8rem', fontWeight: 800 }}>{value.toLocaleString()}</h3>
       </div>
     </div>
   );
@@ -1728,8 +2347,10 @@ function StatItem({ icon, label, value, bg }) {
 // --- QUẢN LÝ NGƯỜI DÙNG ---
 function UserManager({ user, apiFetch }) {
   const [users, setUsers] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
+  const [selectedAreas, setSelectedAreas] = useState([]);
   const defaultForm = {
     ho_ten: "",
     vai_tro: "nhan_vien",
@@ -1740,6 +2361,23 @@ function UserManager({ user, apiFetch }) {
     quyen_xoa: false
   };
   const [form, setForm] = useState(defaultForm);
+
+  const isDark = localStorage.getItem('theme') === 'dark';
+  const secondaryBtnStyle = {
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+    color: isDark ? '#FAFAFA' : '#0F172A',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
+  };
+
+  // Tải danh sách khu vực
+  const fetchLocations = async () => {
+    try {
+      const data = await apiFetch(`${API}/vi-tri`);
+      setLocations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Lỗi tải danh sách khu vực:", err);
+    }
+  };
 
   // Tải danh sách nhân viên từ database
   const fetchUsers = async () => {
@@ -1755,54 +2393,61 @@ function UserManager({ user, apiFetch }) {
 
   useEffect(() => {
     fetchUsers();
+    fetchLocations();
   }, []);
 
   const resetForm = () => {
     setForm(defaultForm);
     setEditingId(null);
+    setSelectedAreas([]);
   };
 
   const handleSubmitUser = async (e) => {
     e.preventDefault();
     if (!form.ho_ten || !form.ten_dang_nhap || (!editingId && !form.mat_khau)) {
-      alert("Vui lòng nhập đầy đủ thông tin!");
+      toast.error("Vui lòng nhập đầy đủ thông tin!")
       return;
     }
 
     try {
+      const formData = {
+        ...form,
+        vi_tri_ids: selectedAreas
+      };
+
       if (editingId) {
         await apiFetch(`${API}/nguoi-dung/${editingId}`, {
           method: "PUT",
-          body: JSON.stringify(form)
+          body: JSON.stringify(formData)
         });
-        alert("Cập nhật nhân viên thành công!");
+        toast.success("Cập nhật nhân viên thành công!")
       } else {
         await apiFetch(`${API}/nguoi-dung`, {
           method: "POST",
-          body: JSON.stringify(form)
+          body: JSON.stringify(formData)
         });
-        alert("Thêm nhân viên thành công!");
+        toast.success("Thêm nhân viên thành công!")
       }
       resetForm();
       fetchUsers();
     } catch (error) {
-      alert("Lỗi: " + error.message);
+      toast.error("Lỗi: " + error.message)
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa nhân viên này?")) {
+    if (await confirmToast("Bạn có chắc chắn muốn xóa nhân viên này?")) {
       try {
         await apiFetch(`${API}/nguoi-dung/${id}`, { method: "DELETE" });
-        alert("Xóa nhân viên thành công!");
+        toast.success("Xóa nhân viên thành công!")
         fetchUsers();
       } catch (error) {
-        alert("Lỗi: " + error.message);
+        toast.error("Lỗi: " + error.message)
       }
     }
   };
 
-  const handleEdit = (userData) => {
+  const handleEdit = async (userData) => {
     setForm({
       ho_ten: userData.ho_ten,
       vai_tro: userData.vai_tro,
@@ -1813,6 +2458,16 @@ function UserManager({ user, apiFetch }) {
       quyen_xoa: userData.quyen_xoa
     });
     setEditingId(userData.id);
+    
+    // Tải các khu vực của nhân viên
+    try {
+      const areasData = await apiFetch(`${API}/nhan-vien/${userData.id}/vi-tri`);
+      const areaIds = Array.isArray(areasData) ? areasData.map(a => a.vi_tri_id) : [];
+      setSelectedAreas(areaIds);
+    } catch (err) {
+      console.error("Lỗi tải khu vực của nhân viên:", err);
+      setSelectedAreas([]);
+    }
   };
 
   return (
@@ -1869,12 +2524,40 @@ function UserManager({ user, apiFetch }) {
                 />
               </div>
             </div>
+            
+            {/* Chọn khu vực */}
+            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc', borderRadius: '8px' }}>
+              <label style={{ display: 'block', marginBottom: '12px', fontWeight: '500' }}>📍 Chọn khu vực làm việc</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                {locations.length === 0 ? (
+                  <p style={{ color: '#94a3b8', gridColumn: '1 / -1' }}>Chưa có khu vực nào. Vui lòng tạo khu vực trước.</p>
+                ) : (
+                  locations.map(location => (
+                    <label key={location.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '8px', borderRadius: '6px', backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#ffffff', border: '1px solid ' + (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0') }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAreas.includes(location.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAreas([...selectedAreas, location.id]);
+                          } else {
+                            setSelectedAreas(selectedAreas.filter(id => id !== location.id));
+                          }
+                        }}
+                      />
+                      <span style={{ fontSize: '14px' }}>{location.ten_vi_tri}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+            
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '16px' }}>
               <button type="submit" className="confirm-btn" style={{ width: 'fit-content' }}>
                 <Users size={18} style={{ marginRight: '8px' }} /> {editingId ? 'Cập nhật' : 'Thêm nhân viên'}
               </button>
               {editingId && (
-                <button type="button" className="secondary-btn" onClick={resetForm}>
+                <button type="button" className="secondary-btn" style={secondaryBtnStyle} onClick={resetForm}>
                   Hủy
                 </button>
               )}
@@ -1981,6 +2664,13 @@ function XuatKhoManager({ user, apiFetch }) {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
+  const isDark = localStorage.getItem('theme') === 'dark';
+  const secondaryBtnStyle = {
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+    color: isDark ? '#FAFAFA' : '#0F172A',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
+  };
+
   const fetchStock = async () => {
     try {
       const data = await apiFetch(`${API}/ton-kho`);
@@ -2011,7 +2701,7 @@ function XuatKhoManager({ user, apiFetch }) {
   };
 
   const getTheoreticalStock = (productId) => {
-    const s = stock.find(st => st.san_pham_id == productId);
+    const s = stock.find(st => st.id == productId); // ✅ API trả về 'id' không phải 'san_pham_id'
     return s ? s.so_luong : 0;
   };
 
@@ -2129,12 +2819,12 @@ function XuatKhoManager({ user, apiFetch }) {
           </table>
         </div>
 
-        <div className="xk-footer">
-          <button className="btn-base btn-ghost" onClick={() => window.history.back()}>
+        <div className="xk-footer" style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+          <button className="secondary-btn" style={{ display: 'flex', alignItems: 'center', gap: '6px', ...secondaryBtnStyle }} onClick={() => window.history.back()}>
             <ArrowLeft size={16} /> Trở về
           </button>
-          <button className="btn-base btn-confirm-xuat" onClick={handleSubmit}>
-            Xác nhận xuất kho
+          <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleSubmit}>
+            <CheckCircle2 size={16} /> Xác nhận xuất kho
           </button>
         </div>
       </div>

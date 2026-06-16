@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require('cors');
 const mysql = require("mysql2");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 app.use(cors());
@@ -48,15 +49,31 @@ handleDisconnect();
 // ==========================================
 app.post("/login", (req, res) => {
     const { username, password } = req.body;
-    const sql = "SELECT id, ten_dang_nhap, ho_ten, vai_tro FROM nguoi_dung WHERE ten_dang_nhap = ? AND mat_khau = ?";
+    const sql = "SELECT id, ten_dang_nhap, ho_ten, vai_tro, mat_khau FROM nguoi_dung WHERE ten_dang_nhap = ?";
     
-    db.query(sql, [username, password], (err, result) => {
+    db.query(sql, [username], async (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (result.length > 0) {
-            res.json({ message: "Đăng nhập thành công", user: result[0] });
-        } else {
-            res.status(401).json({ message: "Sai tên đăng nhập hoặc mật khẩu!" });
+        if (result.length === 0) {
+            return res.status(401).json({ message: "Sai tên đăng nhập hoặc mật khẩu!" });
         }
+
+        const user = result[0];
+        let isMatch = false;
+
+        // Thử bcrypt trước (mật khẩu đã hash)
+        try {
+            isMatch = await bcrypt.compare(password, user.mat_khau);
+        } catch (_) {
+            // Nếu hash không hợp lệ, so sánh plain text
+            isMatch = (password === user.mat_khau);
+        }
+
+        if (!isMatch) {
+            return res.status(401).json({ message: "Sai tên đăng nhập hoặc mật khẩu!" });
+        }
+
+        const { mat_khau, ...userInfo } = user;
+        res.json({ message: "Đăng nhập thành công", user: userInfo, token: `session_${user.id}_${Date.now()}` });
     });
 });
 
@@ -218,6 +235,24 @@ app.get("/dashboard-stats", (req, res) => {
     db.query(sql, (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(result[0]);
+    });
+});
+
+// ==========================================
+// 📋 6. API LỊCH SỬ GIAO DỊCH
+// ==========================================
+app.get("/lich-su-giao-dich", (req, res) => {
+    const sql = `
+        SELECT gd.id, gd.loai, ABS(gd.so_luong) as so_luong, gd.ngay_gd,
+               sp.ten_san_pham
+        FROM giao_dich gd
+        LEFT JOIN san_pham sp ON gd.san_pham_id = sp.id
+        ORDER BY gd.ngay_gd DESC
+        LIMIT 500
+    `;
+    db.query(sql, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(result);
     });
 });
 

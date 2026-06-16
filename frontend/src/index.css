@@ -1,41 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
 :root {
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-light: #eff6ff;
-  --secondary: #6366f1;
-  --accent: #8b5cf6;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --bg-main: #f8fafc;
-  --bg-card: rgba(255, 255, 255, 0.8);
-  --sidebar-bg: #0f172a;
-  --text-main: #1e293b;
-  --text-muted: #64748b;
-  --border-light: #e2e8f0;
-  --glass-border: rgba(255, 255, 255, 0.3);
-  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
-
-  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* LIGHT MODE (Mặc định) - Stripe/Monday Style */
+  --primary: #2563EB;      /* Electric Blue */
+  --primary-hover: #1D4ED8; 
+  --primary-light: rgba(37, 99, 235, 0.1); 
   
-  font-family: var(--sans);
-  line-height: 1.5;
-  font-weight: 400;
+  --secondary: #0ea5e9;    /* Sky */
+  --accent: #8b5cf6;       
+  
+  --success: #10b981;      
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --danger: #ef4444;       
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --warning: #f59e0b;      
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  
+  /* Layout Colors - Light Mode */
+  --bg-main: #F8FAFC;      /* Soft White / Slate 50 */
+  --bg-card: #FFFFFF;      /* Pure white cards */
+  --sidebar-bg: #0F172A;   /* Navy Sidebar for contrast */
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  
+  /* Text Colors - Light Mode */
+  --text-main: #0F172A;    /* Slate 900 */
+  --text-muted: #64748B;   /* Slate 500 */
+  --text-light: #94A3B8;   
+  
+  /* Borders & Shadows - Light Mode */
+  --border-light: rgba(15, 23, 42, 0.06); 
+  --glass-border: rgba(15, 23, 42, 0.04);
+  --glass-shadow: 0 4px 12px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.06);
+  --hover-shadow: 0 12px 20px rgba(0, 0, 0, 0.08), 0 20px 40px rgba(0, 0, 0, 0.12);
+  
+  /* Typography */
+  --sans: 'Outfit', system-ui, -apple-system, sans-serif;
+  
+  /* UI Elements */
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  
+  /* Input colors - Light Mode */
+  --bg-input: rgba(255, 255, 255, 0.85);
+  --bg-select-option: #ffffff;
+}
 
-  color-scheme: light dark;
-  color: var(--text-main);
-  background-color: var(--bg-main);
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.dark {
+  /* DARK MODE - Linear/Vercel Style */
+  --primary: #3B82F6;      /* Lighter Electric Blue for dark mode */
+  --primary-hover: #60A5FA; 
+  --primary-light: rgba(59, 130, 246, 0.15); 
+  
+  /* Layout Colors - Dark Mode */
+  --bg-main: #0A0A0A;      /* Deep dark background */
+  --bg-card: rgba(255, 255, 255, 0.03); /* Glassmorphism card */
+  --sidebar-bg: rgba(10, 10, 10, 0.8);  /* Deep dark sidebar */
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  
+  /* Text Colors - Dark Mode */
+  --text-main: #FAFAFA;    /* Soft White */
+  --text-muted: #A1A1AA;   /* Zinc 400 */
+  --text-light: #71717A;   
+  
+  /* Borders & Shadows - Dark Mode */
+  --border-light: rgba(255, 255, 255, 0.08); 
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --hover-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 0 20px rgba(59, 130, 246, 0.15);
+  
+  /* Input colors - Dark Mode */
+  --bg-input: rgba(255, 255, 255, 0.06);
+  --bg-select-option: #18181b;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   display: flex;
+  font-family: var(--sans);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-main);
+  background-color: var(--bg-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color var(--transition-slow), color var(--transition-slow);
 }
 
 #root {
@@ -47,18 +100,19 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-main);
+  letter-spacing: -0.02em;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Scrollbar styling */
+/* Beautiful Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -66,10 +120,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border-light);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-muted);
 }

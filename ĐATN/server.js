@@ -95,7 +95,7 @@ app.get("/nguoi-dung", requireRole(['admin']), (req, res) => {
 });
 
 app.post("/nguoi-dung", requireRole(['admin']), (req, res) => {
-    const { ho_ten, vai_tro, ten_dang_nhap, mat_khau, quyen_xem, quyen_sua, quyen_xoa } = req.body;
+    const { ho_ten, vai_tro, ten_dang_nhap, mat_khau, quyen_xem, quyen_sua, quyen_xoa, vi_tri_ids } = req.body;
     const hashedPassword = bcrypt.hashSync(mat_khau || "", 10);
     const sql = "INSERT INTO nguoi_dung (ho_ten, vai_tro, ten_dang_nhap, mat_khau, quyen_xem, quyen_sua, quyen_xoa) VALUES (?, ?, ?, ?, ?, ?, ?)";
     db.query(sql, [ho_ten, vai_tro, ten_dang_nhap, hashedPassword, quyen_xem, quyen_sua, quyen_xoa], (err, result) => {
@@ -103,13 +103,31 @@ app.post("/nguoi-dung", requireRole(['admin']), (req, res) => {
             console.error("Lỗi khi thêm người dùng:", err);
             return res.status(500).json({ message: "Lỗi database khi thêm người dùng. Tên đăng nhập có thể đã tồn tại!" });
         }
-        res.json({ message: "Thêm người dùng thành công", id: result.insertId });
+        
+        const nhanVienId = result.insertId;
+        
+        // Thêm khu vực cho nhân viên nếu có
+        if (Array.isArray(vi_tri_ids) && vi_tri_ids.length > 0) {
+            let completed = 0;
+            vi_tri_ids.forEach(vi_tri_id => {
+                db.query(
+                    "INSERT INTO nhan_vien_vi_tri (nhan_vien_id, vi_tri_id) VALUES (?, ?)",
+                    [nhanVienId, vi_tri_id],
+                    (err) => {
+                        completed++;
+                        if (err) console.error('Lỗi thêm khu vực cho nhân viên:', err);
+                    }
+                );
+            });
+        }
+        
+        res.json({ message: "Thêm người dùng thành công", id: nhanVienId });
     });
 });
 
 app.put("/nguoi-dung/:id", requireRole(['admin']), (req, res) => {
     const id = req.params.id;
-    const { ho_ten, vai_tro, mat_khau, quyen_xem, quyen_sua, quyen_xoa } = req.body;
+    const { ho_ten, vai_tro, mat_khau, quyen_xem, quyen_sua, quyen_xoa, vi_tri_ids } = req.body;
 
     const values = [ho_ten, vai_tro, quyen_xem, quyen_sua, quyen_xoa];
     let sql = "UPDATE nguoi_dung SET ho_ten = ?, vai_tro = ?, quyen_xem = ?, quyen_sua = ?, quyen_xoa = ?";
@@ -125,7 +143,34 @@ app.put("/nguoi-dung/:id", requireRole(['admin']), (req, res) => {
 
     db.query(sql, values, (err) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: "Cập nhật thông tin người dùng thành công" });
+        
+        // Cập nhật khu vực cho nhân viên nếu có
+        if (Array.isArray(vi_tri_ids)) {
+            db.query("DELETE FROM nhan_vien_vi_tri WHERE nhan_vien_id = ?", [id], (deleteErr) => {
+                if (deleteErr) {
+                    console.error('Lỗi xóa khu vực cũ:', deleteErr);
+                    return res.json({ message: "Cập nhật thông tin người dùng thành công (nhưng lỗi cập nhật khu vực)" });
+                }
+                
+                if (vi_tri_ids.length > 0) {
+                    let completed = 0;
+                    vi_tri_ids.forEach(vi_tri_id => {
+                        db.query(
+                            "INSERT INTO nhan_vien_vi_tri (nhan_vien_id, vi_tri_id) VALUES (?, ?)",
+                            [id, vi_tri_id],
+                            (err) => {
+                                completed++;
+                                if (err) console.error('Lỗi thêm khu vực cho nhân viên:', err);
+                            }
+                        );
+                    });
+                }
+                
+                res.json({ message: "Cập nhật thông tin người dùng thành công" });
+            });
+        } else {
+            res.json({ message: "Cập nhật thông tin người dùng thành công" });
+        }
     });
 });
 
@@ -169,6 +214,71 @@ app.put("/me", requireAuth, (req, res) => {
         db.query(updateSql, values, (err2) => {
             if (err2) return res.status(500).json({ error: err2.message });
             res.json({ message: "Cập nhật thông tin cá nhân thành công!" });
+        });
+    });
+});
+
+// ==========================================
+// 2.1. 👥 API QUẢN LÝ KHU VỰC CỦA NHÂN VIÊN
+// ==========================================
+
+// Lấy danh sách khu vực của nhân viên
+app.get("/nhan-vien/:id/vi-tri", requireRole(['admin', 'quan_ly']), (req, res) => {
+    const nhanVienId = req.params.id;
+    
+    const sql = `
+        SELECT nvvt.id, nvvt.vi_tri_id, vt.ten_vi_tri, vt.mo_ta
+        FROM nhan_vien_vi_tri nvvt
+        JOIN vi_tri_kho vt ON nvvt.vi_tri_id = vt.id
+        WHERE nvvt.nhan_vien_id = ?
+        ORDER BY vt.ten_vi_tri
+    `;
+    
+    db.query(sql, [nhanVienId], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(result || []);
+    });
+});
+
+// Thêm/Cập nhật khu vực cho nhân viên
+app.post("/nhan-vien/:id/vi-tri", requireRole(['admin']), (req, res) => {
+    const nhanVienId = req.params.id;
+    const { vi_tri_ids } = req.body; // Mảng các ID khu vực
+    
+    if (!Array.isArray(vi_tri_ids)) {
+        return res.status(400).json({ message: "vi_tri_ids phải là mảng" });
+    }
+    
+    // Xóa tất cả khu vực cũ của nhân viên này
+    db.query("DELETE FROM nhan_vien_vi_tri WHERE nhan_vien_id = ?", [nhanVienId], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        // Nếu không có khu vực mới, chỉ xóa và trả về
+        if (vi_tri_ids.length === 0) {
+            return res.json({ message: "Xóa hết khu vực của nhân viên" });
+        }
+        
+        // Thêm khu vực mới
+        let completed = 0;
+        const errors = [];
+        
+        vi_tri_ids.forEach(vi_tri_id => {
+            db.query(
+                "INSERT INTO nhan_vien_vi_tri (nhan_vien_id, vi_tri_id) VALUES (?, ?)",
+                [nhanVienId, vi_tri_id],
+                (err) => {
+                    completed++;
+                    if (err) errors.push(err.message);
+                    
+                    // Sau khi hoàn thành tất cả
+                    if (completed === vi_tri_ids.length) {
+                        if (errors.length > 0) {
+                            return res.status(500).json({ message: "Lỗi thêm khu vực", errors });
+                        }
+                        res.json({ message: "Cập nhật khu vực cho nhân viên thành công" });
+                    }
+                }
+            );
         });
     });
 });
@@ -499,17 +609,88 @@ app.get("/dashboard-stats", requireRole(['admin', 'quan_ly', 'nhan_vien']), (req
 });
 
 // ==========================================
+// 7.5. 📊 API LẤY PHÂN LOẠI ABC+XYZ TỪ DB (DÀNH CHO DASHBOARD)
+// Trả về danh sách sản phẩm kèm phan_loai_abc và phan_loai_xyz đã lưu
+// ==========================================
+app.get("/phan-loai-san-pham", requireRole(['admin', 'quan_ly']), (req, res) => {
+    const sql = `
+        SELECT id, ten_san_pham, phan_loai_abc,
+               IFNULL(phan_loai_xyz, 'Z') as phan_loai_xyz
+        FROM san_pham
+        ORDER BY id ASC
+    `;
+    db.query(sql, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(result);
+    });
+});
+
+// ==========================================
+// 7.6. 🔔 API CẢNH BÁO THÔNG MINH (Smart Alerts)
+// Tổng hợp sản phẩm sắp hết hàng với ngưỡng cảnh báo
+// ==========================================
+app.get("/canh-bao", requireRole(['admin', 'quan_ly', 'nhan_vien']), (req, res) => {
+    const sql = `
+        SELECT 
+            sp.id,
+            sp.ten_san_pham,
+            sp.danh_muc,
+            IFNULL(tk.so_luong, 0) as so_luong,
+            IFNULL(tk.vi_tri, 'Kệ chờ') as vi_tri,
+            IFNULL(sp.phan_loai_abc, 'Thấp') as muc_do_quan_trong,
+            IFNULL(sp.phan_loai_xyz, 'Z') as do_on_dinh,
+            CASE 
+                WHEN IFNULL(tk.so_luong, 0) = 0 THEN 'Hết hàng'
+                WHEN IFNULL(tk.so_luong, 0) < 5 THEN 'Nguy hiểm'
+                WHEN IFNULL(tk.so_luong, 0) < 10 THEN 'Cảnh báo'
+                WHEN IFNULL(tk.so_luong, 0) < 20 THEN 'Chú ý'
+                ELSE 'Ổn định'
+            END as trang_thai_canh_bao
+        FROM san_pham sp
+        LEFT JOIN ton_kho tk ON sp.id = tk.san_pham_id
+        WHERE IFNULL(tk.so_luong, 0) < 20
+        ORDER BY IFNULL(tk.so_luong, 0) ASC
+        LIMIT 50
+    `;
+    db.query(sql, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(result);
+    });
+});
+
+// ==========================================
 // 8. ⏰ TỰ ĐỘNG CHỤP SNAPSHOT TỒN KHO EOD (End Of Day)
+// Đồng bộ tên cột với bảng do AI tạo: captured_at (không phải ngay_snapshot)
 // ==========================================
 cron.schedule('59 23 * * *', () => {
     console.log('📦 [CRON] Bắt đầu chụp Snapshot tồn kho EOD...');
-    const sql = `
-        INSERT INTO inventory_snapshots (san_pham_id, so_luong, ngay_snapshot)
-        SELECT san_pham_id, so_luong, CURDATE() FROM ton_kho
-    `;
-    db.query(sql, (err) => {
-        if (err) console.error('Lỗi khi chụp snapshot EOD:', err.message);
-        else console.log('✅ [CRON] Chụp Snapshot tồn kho EOD thành công!');
+    // Lấy tồn kho kèm vị trí rồi insert vào inventory_snapshots
+    const selectSql = `SELECT tk.san_pham_id, tk.so_luong, IFNULL(tk.vi_tri, 'Kệ chờ') as vi_tri FROM ton_kho tk`;
+    db.query(selectSql, (err, rows) => {
+        if (err) {
+            console.error('Lỗi truy vấn tồn kho để snapshot:', err.message);
+            return;
+        }
+        if (!rows || rows.length === 0) {
+            console.log('⚠️ [CRON] Không có dữ liệu tồn kho để snapshot.');
+            return;
+        }
+        let completed = 0;
+        let errors = 0;
+        rows.forEach(row => {
+            db.query(
+                'INSERT INTO inventory_snapshots (san_pham_id, so_luong, vi_tri, captured_at) VALUES (?, ?, ?, NOW())',
+                [row.san_pham_id, row.so_luong, row.vi_tri],
+                (insertErr) => {
+                    completed++;
+                    if (insertErr) errors++;
+                    if (completed === rows.length) {
+                        if (errors > 0) console.error(`❌ [CRON] Snapshot EOD có ${errors} lỗi.`);
+                        else console.log(`✅ [CRON] Snapshot EOD thành công: ${completed} bản ghi.`);
+                    }
+                }
+            );
+        });
     });
 });
 
