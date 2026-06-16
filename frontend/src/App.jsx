@@ -8,7 +8,8 @@ import {
   ShoppingCart, AlertTriangle, FileSpreadsheet, FileText,
   Search, ArrowLeft, CheckCircle2, Plus, PlusCircle, Save,
   TrendingUp, Loader2, Sparkles, PackageCheck, PackageMinus, PackageX,
-  ArrowRightCircle, MapPin, ClipboardList, Settings2, Moon, Sun
+  ArrowRightCircle, MapPin, ClipboardList, Settings2, Moon, Sun,
+  Bell, BellOff, ShieldAlert, ShieldCheck, Info, RefreshCw, Filter
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -1419,6 +1420,12 @@ function Dashboard({ user, apiFetch, theme }) {
   const [productClassDetails, setProductClassDetails] = useState({});
   const [historyAvailable, setHistoryAvailable] = useState(true);
 
+  // Alert Dashboard states
+  const [alerts, setAlerts] = useState([]);
+  const [alertFilter, setAlertFilter] = useState('all'); // 'all' | 'critical' | 'warning' | 'info'
+  const [alertDismissed, setAlertDismissed] = useState(new Set());
+  const [showAlertDashboard, setShowAlertDashboard] = useState(true);
+
   // State cho AI Prediction
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
@@ -1558,6 +1565,67 @@ function Dashboard({ user, apiFetch, theme }) {
         setStock(st);
         const total = st.reduce((sum, item) => sum + (Number(item.so_luong) || 0), 0);
         const lowStock = st.filter(item => item.so_luong < 10).length;
+
+        // Tạo alerts từ dữ liệu tồn kho
+        const generatedAlerts = [];
+        st.forEach(item => {
+          const qty = Number(item.so_luong) || 0;
+          if (qty === 0) {
+            generatedAlerts.push({
+              id: `out-${item.id}`,
+              type: 'critical',
+              sanPhamId: item.id,
+              ten_san_pham: item.ten_san_pham,
+              so_luong: qty,
+              vi_tri: item.vi_tri || 'Kệ chờ',
+              message: `Sản phẩm đã hết hàng hoàn toàn!`,
+              action: 'Cần nhập hàng ngay',
+              timestamp: new Date().toISOString()
+            });
+          } else if (qty < 5) {
+            generatedAlerts.push({
+              id: `critical-${item.id}`,
+              type: 'critical',
+              sanPhamId: item.id,
+              ten_san_pham: item.ten_san_pham,
+              so_luong: qty,
+              vi_tri: item.vi_tri || 'Kệ chờ',
+              message: `Tồn kho cực thấp (${qty} ${item.don_vi || 'đơn vị'})`,
+              action: 'Nhập hàng khẩn cấp',
+              timestamp: new Date().toISOString()
+            });
+          } else if (qty < 10) {
+            generatedAlerts.push({
+              id: `warning-${item.id}`,
+              type: 'warning',
+              sanPhamId: item.id,
+              ten_san_pham: item.ten_san_pham,
+              so_luong: qty,
+              vi_tri: item.vi_tri || 'Kệ chờ',
+              message: `Tồn kho sắp hết (${qty} ${item.don_vi || 'đơn vị'})`,
+              action: 'Lên kế hoạch nhập hàng',
+              timestamp: new Date().toISOString()
+            });
+          } else if (qty > 500) {
+            generatedAlerts.push({
+              id: `overstock-${item.id}`,
+              type: 'info',
+              sanPhamId: item.id,
+              ten_san_pham: item.ten_san_pham,
+              so_luong: qty,
+              vi_tri: item.vi_tri || 'Kệ chờ',
+              message: `Tồn kho quá cao (${qty} ${item.don_vi || 'đơn vị'}) — có thể tồn đọng`,
+              action: 'Xem xét kế hoạch xử lý',
+              timestamp: new Date().toISOString()
+            });
+          }
+        });
+        // Sắp xếp: critical trước, warning sau, info cuối
+        generatedAlerts.sort((a, b) => {
+          const order = { critical: 0, warning: 1, info: 2 };
+          return order[a.type] - order[b.type];
+        });
+        setAlerts(generatedAlerts);
         setStats(prev => ({ ...prev, tongTonKho: total, sapHetHang: lowStock }));
 
         const formatted = st.slice(0, 7).map(item => ({
@@ -1871,6 +1939,300 @@ function Dashboard({ user, apiFetch, theme }) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* === SECTION ALERT DASHBOARD === */}
+      <div style={{ marginTop: '30px' }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginBottom: '16px', flexWrap: 'wrap', gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              background: isDark ? 'rgba(239,68,68,0.15)' : '#fee2e2',
+              borderRadius: '10px', padding: '8px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <Bell size={22} color="#ef4444" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Trung Tâm Cảnh Báo</h3>
+              <p style={{ margin: 0, fontSize: '13px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                Theo dõi tất cả cảnh báo tồn kho theo thời gian thực
+              </p>
+            </div>
+            {alerts.filter(a => !alertDismissed.has(a.id)).length > 0 && (
+              <span style={{
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                color: 'white', borderRadius: '20px', padding: '3px 10px',
+                fontSize: '12px', fontWeight: 700,
+                boxShadow: '0 2px 8px rgba(239,68,68,0.4)',
+                animation: 'pulse 2s infinite'
+              }}>
+                {alerts.filter(a => !alertDismissed.has(a.id)).length} cảnh báo
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Filter buttons */}
+            {[
+              { key: 'all', label: 'Tất cả', color: isDark ? '#a1a1aa' : '#64748b', activeBg: isDark ? 'rgba(148,163,184,0.2)' : '#f1f5f9' },
+              { key: 'critical', label: '🔴 Nguy cấp', color: '#ef4444', activeBg: 'rgba(239,68,68,0.15)' },
+              { key: 'warning', label: '🟡 Cảnh báo', color: '#f59e0b', activeBg: 'rgba(245,158,11,0.15)' },
+              { key: 'info', label: '🔵 Thông tin', color: '#3b82f6', activeBg: 'rgba(59,130,246,0.15)' }
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setAlertFilter(f.key)}
+                style={{
+                  padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  border: alertFilter === f.key
+                    ? `1px solid ${f.color}`
+                    : isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0',
+                  background: alertFilter === f.key ? f.activeBg : 'transparent',
+                  color: alertFilter === f.key ? f.color : (isDark ? '#a1a1aa' : '#64748b')
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+            <button
+              onClick={() => setAlertDismissed(new Set())}
+              title="Khôi phục tất cả cảnh báo"
+              style={{
+                padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                cursor: 'pointer', transition: 'all 0.2s',
+                border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0',
+                background: 'transparent',
+                color: isDark ? '#a1a1aa' : '#64748b',
+                display: 'flex', alignItems: 'center', gap: '5px'
+              }}
+            >
+              <RefreshCw size={13} /> Khôi phục
+            </button>
+          </div>
+        </div>
+
+        {/* Alert Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          {[
+            {
+              label: 'Nguy cấp',
+              count: alerts.filter(a => a.type === 'critical' && !alertDismissed.has(a.id)).length,
+              icon: <ShieldAlert size={20} />,
+              bg: isDark ? 'rgba(239,68,68,0.12)' : '#fef2f2',
+              border: isDark ? 'rgba(239,68,68,0.25)' : '#fecaca',
+              color: '#ef4444',
+              sub: 'Cần xử lý ngay'
+            },
+            {
+              label: 'Cảnh báo',
+              count: alerts.filter(a => a.type === 'warning' && !alertDismissed.has(a.id)).length,
+              icon: <AlertTriangle size={20} />,
+              bg: isDark ? 'rgba(245,158,11,0.12)' : '#fffbeb',
+              border: isDark ? 'rgba(245,158,11,0.25)' : '#fde68a',
+              color: '#f59e0b',
+              sub: 'Cần theo dõi'
+            },
+            {
+              label: 'Thông tin',
+              count: alerts.filter(a => a.type === 'info' && !alertDismissed.has(a.id)).length,
+              icon: <Info size={20} />,
+              bg: isDark ? 'rgba(59,130,246,0.12)' : '#eff6ff',
+              border: isDark ? 'rgba(59,130,246,0.25)' : '#bfdbfe',
+              color: '#3b82f6',
+              sub: 'Tồn kho bất thường'
+            },
+            {
+              label: 'Đã xử lý',
+              count: alertDismissed.size,
+              icon: <ShieldCheck size={20} />,
+              bg: isDark ? 'rgba(16,185,129,0.12)' : '#ecfdf5',
+              border: isDark ? 'rgba(16,185,129,0.25)' : '#a7f3d0',
+              color: '#10b981',
+              sub: 'Đã bỏ qua'
+            }
+          ].map(card => (
+            <div
+              key={card.label}
+              style={{
+                background: card.bg,
+                border: `1px solid ${card.border}`,
+                borderRadius: '14px', padding: '16px',
+                display: 'flex', flexDirection: 'column', gap: '6px',
+                transition: 'transform 0.2s'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: card.color }}>
+                {card.icon}
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>{card.label}</span>
+              </div>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: card.color, lineHeight: 1 }}>
+                {card.count}
+              </div>
+              <div style={{ fontSize: '11px', color: isDark ? '#94a3b8' : '#64748b' }}>{card.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Alert List */}
+        {alerts.length === 0 ? (
+          <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
+            <ShieldCheck size={48} color="#10b981" style={{ marginBottom: '12px' }} />
+            <p style={{ fontSize: '16px', fontWeight: 600, color: '#10b981', margin: 0 }}>Không có cảnh báo nào!</p>
+            <p style={{ fontSize: '13px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '8px' }}>Tất cả sản phẩm đều ở mức tồn kho an toàn.</p>
+          </div>
+        ) : (
+          <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
+            {/* Table Header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '28px 1fr 100px 120px 1fr 120px 90px',
+              gap: '12px',
+              padding: '12px 20px',
+              background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc',
+              borderBottom: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #e2e8f0',
+              fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+              letterSpacing: '0.5px', color: isDark ? '#94a3b8' : '#64748b'
+            }}>
+              <span></span>
+              <span>Sản phẩm</span>
+              <span style={{ textAlign: 'center' }}>Tồn kho</span>
+              <span style={{ textAlign: 'center' }}>Mức độ</span>
+              <span>Chi tiết cảnh báo</span>
+              <span>Đề xuất</span>
+              <span style={{ textAlign: 'center' }}>Thao tác</span>
+            </div>
+
+            {/* Table Rows */}
+            {alerts
+              .filter(a => !alertDismissed.has(a.id) && (alertFilter === 'all' || a.type === alertFilter))
+              .map((alert, idx) => {
+                const typeConfig = {
+                  critical: {
+                    color: '#ef4444',
+                    bg: isDark ? 'rgba(239,68,68,0.08)' : '#fff5f5',
+                    badgeBg: isDark ? 'rgba(239,68,68,0.2)' : '#fee2e2',
+                    label: 'Nguy cấp',
+                    icon: <ShieldAlert size={14} />
+                  },
+                  warning: {
+                    color: '#f59e0b',
+                    bg: isDark ? 'rgba(245,158,11,0.06)' : '#fffdf0',
+                    badgeBg: isDark ? 'rgba(245,158,11,0.2)' : '#fef3c7',
+                    label: 'Cảnh báo',
+                    icon: <AlertTriangle size={14} />
+                  },
+                  info: {
+                    color: '#3b82f6',
+                    bg: isDark ? 'rgba(59,130,246,0.06)' : '#f8fbff',
+                    badgeBg: isDark ? 'rgba(59,130,246,0.2)' : '#dbeafe',
+                    label: 'Thông tin',
+                    icon: <Info size={14} />
+                  }
+                };
+                const cfg = typeConfig[alert.type] || typeConfig.info;
+
+                return (
+                  <div
+                    key={alert.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '28px 1fr 100px 120px 1fr 120px 90px',
+                      gap: '12px',
+                      padding: '14px 20px',
+                      alignItems: 'center',
+                      borderBottom: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid #f1f5f9',
+                      background: idx % 2 === 0 ? 'transparent' : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    {/* Indicator dot */}
+                    <div style={{
+                      width: '8px', height: '8px', borderRadius: '50%',
+                      background: cfg.color,
+                      boxShadow: `0 0 6px ${cfg.color}`,
+                      justifySelf: 'center'
+                    }} />
+
+                    {/* Tên sản phẩm */}
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '14px' }}>{alert.ten_san_pham}</div>
+                      <div style={{ fontSize: '11px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                        📍 {alert.vi_tri}
+                      </div>
+                    </div>
+
+                    {/* Số lượng */}
+                    <div style={{ textAlign: 'center' }}>
+                      <span style={{
+                        background: alert.so_luong === 0
+                          ? (isDark ? 'rgba(239,68,68,0.25)' : '#fecaca')
+                          : (isDark ? 'rgba(99,102,241,0.2)' : '#e0e7ff'),
+                        color: alert.so_luong === 0 ? '#ef4444' : (isDark ? '#818cf8' : '#4338ca'),
+                        padding: '4px 10px', borderRadius: '6px',
+                        fontWeight: 700, fontSize: '14px'
+                      }}>
+                        {alert.so_luong}
+                      </span>
+                    </div>
+
+                    {/* Mức độ badge */}
+                    <div style={{ textAlign: 'center' }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        background: cfg.badgeBg, color: cfg.color,
+                        padding: '4px 10px', borderRadius: '6px',
+                        fontSize: '12px', fontWeight: 700
+                      }}>
+                        {cfg.icon} {cfg.label}
+                      </span>
+                    </div>
+
+                    {/* Message */}
+                    <div style={{ fontSize: '13px', color: isDark ? '#cbd5e1' : '#334155' }}>
+                      {alert.message}
+                    </div>
+
+                    {/* Action */}
+                    <div style={{ fontSize: '12px', color: cfg.color, fontWeight: 600 }}>
+                      {alert.action}
+                    </div>
+
+                    {/* Dismiss button */}
+                    <div style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => setAlertDismissed(prev => new Set([...prev, alert.id]))}
+                        title="Bỏ qua cảnh báo này"
+                        style={{
+                          background: 'transparent',
+                          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0',
+                          borderRadius: '6px', padding: '5px 10px',
+                          cursor: 'pointer', fontSize: '11px', fontWeight: 600,
+                          color: isDark ? '#94a3b8' : '#64748b',
+                          display: 'flex', alignItems: 'center', gap: '4px',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <BellOff size={12} /> Bỏ qua
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            }
+
+            {/* Empty filter state */}
+            {alerts.filter(a => !alertDismissed.has(a.id) && (alertFilter === 'all' || a.type === alertFilter)).length === 0 && (
+              <div style={{ padding: '32px', textAlign: 'center', color: isDark ? '#94a3b8' : '#64748b' }}>
+                <ShieldCheck size={36} color="#10b981" style={{ marginBottom: '8px' }} />
+                <p style={{ margin: 0, fontWeight: 600 }}>Không có cảnh báo loại này</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* === SECTION DỰ BÁO NHU CẦU AI === */}
